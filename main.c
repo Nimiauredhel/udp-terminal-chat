@@ -1,9 +1,5 @@
-#include <stdio.h>
-#include <stdint.h>
-#include <stdbool.h>
-#include <stdlib.h>
-#include <string.h>
-#include <errno.h>
+#include "common.h"
+#include "networking_common.h"
 
 int main(void)
 {
