@@ -1,8 +1,9 @@
 #include "common.h"
 #include "networking_common.h"
 
-int main(void)
+int main(int argc, char *argv[])
 {
     printf("Hello World.\n");
-    return 0;
+
+    return EXIT_SUCCESS;
 }

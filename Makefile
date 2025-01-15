@@ -1,26 +1,28 @@
+PROGRAM=program
+
 default:
-	gcc *.c -o program
+	gcc *.c -o $(PROGRAM).o
                                      
 strict:                              
-	bear -- gcc *.c -std=c99 -Wall -pedantic -Wextra -o program
+	bear -- gcc *.c -std=c99 -Wall -pedantic -Wextra -o $(PROGRAM).o
                     
 debug:              
-	gcc *.c -std=c99 -Wall -pedantic -Wextra -g -o0 -o program
+	gcc *.c -std=c99 -Wall -pedantic -Wextra -g -o0 -o $(PROGRAM).o
 
 run:
-	./program
+	./$(PROGRAM).o
 
 andrun:
-	gcc *.c -o program
-	./program
+	gcc *.c -o $(PROGRAM).o
+	./$(PROGRAM).o
 
 gdb:
-	gdb ./program
+	gdb ./$(PROGRAM).o
 
 valgrind:
-	valgrind -s --leak-check=yes --track-origins=yes ./program
+	valgrind -s --leak-check=yes --track-origins=yes ./$(PROGRAM).o
 
 clean:
-	rm -f program
+	rm -f $(PROGRAM).o
 	rm -f compile_commands.json
 
