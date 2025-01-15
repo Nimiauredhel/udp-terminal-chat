@@ -10,6 +10,11 @@ static char peer_ip[INPUT_MAX_LENGTH];
 static char in_buffer[INPUT_MAX_LENGTH];
 static char out_buffer[MSG_MAX_LENGTH];
 
+static struct sockaddr_in peer_address =
+{
+    .sin_family = AF_INET
+};
+
 void client_init(void)
 {
     printf("Client Init.\n");
@@ -22,12 +27,7 @@ void client_init(void)
     fgets(in_buffer, INPUT_MAX_LENGTH, stdin);
     in_buffer[strcspn(in_buffer, "\n")] = 0;
     peer_port = atoi(in_buffer);
-
-    struct sockaddr_in peer_address =
-    {
-        .sin_family = AF_INET,
-        .sin_port = htons(peer_port)
-    };
+    peer_address.sin_port = htons(peer_port);
 
     if (inet_pton(AF_INET, peer_ip, &(peer_address.sin_addr)) <= 0)
     {
@@ -42,7 +42,10 @@ void client_init(void)
         perror("Error in socket creation");
         exit(EINVAL);
     }
+}
 
+void client_loop(void)
+{
     uint16_t msg_length;
 
     while(true)
@@ -68,9 +71,4 @@ void client_init(void)
     close(udp_socket);
     printf("Goodbye!\n");
     exit(EXIT_SUCCESS);
-}
-
-void client_loop(void)
-{
-    printf("Client Loop.\n");
 }

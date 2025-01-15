@@ -23,9 +23,11 @@ int main(int argc, char *argv[])
             return EINVAL;
         case 0:
             server_init();
+            server_loop();
             break;
         case 1:
             client_init();
+            client_loop();
             break;
     }
 
