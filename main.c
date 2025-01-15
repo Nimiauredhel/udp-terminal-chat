@@ -1,5 +1,6 @@
 #include "common.h"
-#include "networking_common.h"
+#include "client.h"
+#include "server.h"
 
 #define MODES_COUNT 2
 #define MODES_MAXLENGTH 8
@@ -14,18 +15,19 @@ void print_usage(const char* process_name);
 
 int main(int argc, char *argv[])
 {
-
-    int8_t selection = get_selection_from_args(argc, argv);
-
-    if (selection < 0)
+    switch (get_selection_from_args(argc, argv))
     {
-        print_usage(argv[0]);
-        printf("Terminating.\n");
-        return EINVAL;
+        case -1:
+            print_usage(argv[0]);
+            printf("Terminating.\n");
+            return EINVAL;
+        case 0:
+            server_init();
+            break;
+        case 1:
+            client_init();
+            break;
     }
-
-    printf("Hello World.\n");
-    printf("You selected %s mode.\n", modes[selection]);
 
     return EXIT_SUCCESS;
 }
