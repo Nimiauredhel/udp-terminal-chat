@@ -1,13 +1,9 @@
 #include "server.h"
 
-#define MSG_MAX_LENGTH 1024
-#define INPUT_MAX_LENGTH 32
-static const uint16_t msg_max_length = MSG_MAX_LENGTH;
-
 static int udp_rx_socket;
-static int rx_port;
-static char in_buffer[INPUT_MAX_LENGTH];
-static char out_buffer[MSG_MAX_LENGTH];
+static int rx_port_int;
+static char rx_port[ADDRESS_BUFF_LENGTH];
+static char msg_buffer[MSG_BUFF_LENGTH];
 
 static struct sockaddr_in peer_address =
 {
@@ -25,10 +21,10 @@ void server_init(void)
     printf("Server Init.\n");
 
     printf("Receive on port: ");
-    fgets(in_buffer, INPUT_MAX_LENGTH, stdin);
-    in_buffer[strcspn(in_buffer, "\n")] = 0;
-    rx_port = atoi(in_buffer);
-    local_address.sin_port = htons(rx_port);
+    fgets(rx_port, address_buff_length, stdin);
+    rx_port[strcspn(rx_port, "\n")] = 0;
+    rx_port_int = atoi(rx_port);
+    local_address.sin_port = htons(rx_port_int);
 
     if ((udp_rx_socket = socket(AF_INET, SOCK_DGRAM, 0)) <= 0)
     {
@@ -55,7 +51,7 @@ void server_loop(void)
 
     while(true)
     {
-        int bytes_received = recvfrom(udp_rx_socket, out_buffer, msg_max_length, 0, (struct sockaddr*)&peer_address, &peer_address_length);
+        int bytes_received = recvfrom(udp_rx_socket, msg_buffer, msg_buff_length, 0, (struct sockaddr*)&peer_address, &peer_address_length);
 
         if (bytes_received <= 0)
         {
@@ -64,7 +60,7 @@ void server_loop(void)
             exit(EXIT_FAILURE);
         }
 
-        printf("Received a packet from %s:%d -- Message: %s\n", inet_ntoa(peer_address.sin_addr), ntohs(peer_address.sin_port), out_buffer);
+        printf("Received a packet from %s:%d -- Message: %s\n", inet_ntoa(peer_address.sin_addr), ntohs(peer_address.sin_port), msg_buffer);
     }
 
     close(udp_rx_socket);
