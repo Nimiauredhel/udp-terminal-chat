@@ -38,7 +38,7 @@ int8_t get_selection_from_args(int argc, char *argv[])
 {
     int8_t selection = -1;
 
-    if (argc == 2)
+    if (argc > 1)
     {
         for (uint8_t i = 0; i < MODES_COUNT; i++)
         {
