@@ -23,7 +23,6 @@ typedef struct Message
     char body[MSG_BUFF_LENGTH];
 } Message_t;
 
-
 extern const uint16_t address_buff_length;
 extern const uint16_t msg_buff_length;
 

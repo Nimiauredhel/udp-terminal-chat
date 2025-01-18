@@ -114,7 +114,7 @@ void client_loop(void)
 
         if (has_input)
         {
-            printf("\nMessage: ");
+            printf("Message: ");
             fflush(stdout);
         }
 
