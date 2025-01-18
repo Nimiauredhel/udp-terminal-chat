@@ -8,14 +8,25 @@ static char peer_ip[ADDRESS_BUFF_LENGTH];
 static char peer_port[ADDRESS_BUFF_LENGTH];
 static char client_name[ADDRESS_BUFF_LENGTH];
 static Message_t outgoing_message;
+static char incoming_buffer[ADDRESS_BUFF_LENGTH + MSG_BUFF_LENGTH + 4];
 
-static struct sockaddr_in peer_address =
-{
-    .sin_family = AF_INET
-};
+static struct sockaddr_in peer_address = { .sin_family = AF_INET };
+static struct sockaddr_in local_address = { .sin_family = AF_INET, .sin_addr.s_addr = INADDR_ANY };
+socklen_t peer_address_length = sizeof(peer_address);
 
 static void client_listen(void)
 {
+        memset(&incoming_buffer, 0, sizeof(incoming_buffer));
+        int bytes_received = recvfrom(udp_socket, &incoming_buffer, sizeof(incoming_buffer), 0, (struct sockaddr*)&peer_address, &peer_address_length);
+
+        if (bytes_received <= 0)
+        {
+            close(udp_socket);
+            perror("Failed to receive bytes");
+            exit(EXIT_FAILURE);
+        }
+
+        printf("%s", incoming_buffer);
 }
 
 void client_init(void)
@@ -42,6 +53,7 @@ void client_init(void)
 
     peer_port_int = atoi(peer_port);
     peer_address.sin_port = htons(peer_port_int);
+    local_address.sin_port = htons(peer_port_int);
 
     if (inet_pton(AF_INET, peer_ip, &(peer_address.sin_addr)) <= 0)
     {
@@ -55,6 +67,13 @@ void client_init(void)
     {
         perror("Error in socket creation");
         exit(EINVAL);
+    }
+
+    //bind the socket to the address/port
+    if (bind(udp_socket, (struct sockaddr *)&local_address, sizeof(local_address)) < 0)
+    {
+        perror("Could not bind socket");
+        exit(EXIT_FAILURE);
     }
 
     printf("Client name: ");
@@ -100,6 +119,8 @@ void client_loop(void)
             strcpy(outgoing_message.body, client_name);
             msg_length = strlen(client_name) + 4;
             outgoing_message.header = MESSAGE_JOIN;
+
+            client_listen();
         }
 
         if (msg_length <= 4) break;
