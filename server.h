@@ -9,7 +9,7 @@
 typedef struct ClientsData
 {
     bool connected[MAX_CLIENT_COUNT];
-    in_addr_t addresses[MAX_CLIENT_COUNT];
+    struct sockaddr_in addresses[MAX_CLIENT_COUNT];
     char names[MAX_CLIENT_COUNT][ADDRESS_BUFF_LENGTH];
 } ClientsData_t;
 

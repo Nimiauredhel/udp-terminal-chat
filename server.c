@@ -3,20 +3,12 @@
 static int udp_rx_socket;
 static int rx_port_int;
 static char rx_port[ADDRESS_BUFF_LENGTH];
-static Message_t incoming_message;
+
+static int udp_tx_socket;
 
 static ClientsData_t clients = {0};
 
-static struct sockaddr_in peer_address =
-{
-    .sin_family = AF_INET
-};
-
-static struct sockaddr_in local_address =
-{
-    .sin_family = AF_INET,
-    .sin_addr.s_addr = INADDR_ANY
-};
+static struct sockaddr_in local_address = { .sin_family = AF_INET, .sin_addr.s_addr = INADDR_ANY };
 
 static int8_t get_free_client_index()
 {
@@ -28,18 +20,19 @@ static int8_t get_free_client_index()
     return -1;
 }
 
-static int8_t get_matching_client_index(in_addr_t address)
+static int8_t get_matching_client_index(struct sockaddr_in *address)
 {
     for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
     {
-        if (clients.addresses[i] == address
-            && clients.connected[i]) return i;
+        if (clients.connected[i]
+            && clients.addresses[i].sin_addr.s_addr == address->sin_addr.s_addr
+            && clients.addresses[i].sin_port == address->sin_port) return i;
     }
 
     return -1;
 }
 
-static void handle_client_join(char *name, in_addr_t address)
+static void handle_client_join(char *name, struct sockaddr_in *address)
 {
     int8_t index = get_matching_client_index(address);
 
@@ -57,7 +50,7 @@ static void handle_client_join(char *name, in_addr_t address)
         else
         {
             clients.connected[index] = true;
-            clients.addresses[index] = address;
+            clients.addresses[index] = *address;
             strcpy(clients.names[index], name);
             printf("%s has joined the conversation.\n", clients.names[index]);
         }
@@ -69,7 +62,7 @@ static void handle_client_join(char *name, in_addr_t address)
     }
 }
 
-void handle_client_quit(in_addr_t address)
+void handle_client_quit(struct sockaddr_in *address)
 {
     int8_t index = get_matching_client_index(address);
     
@@ -77,6 +70,25 @@ void handle_client_quit(in_addr_t address)
     {
         printf("%s left the conversation.\n", clients.names[index]);
         clients.connected[index] = false;
+    }
+}
+
+void forward_message_to_clients(int8_t sender_index, char *message)
+{
+    size_t message_length = strlen(message) + 1;
+
+    for (int8_t index = 0; index < MAX_CLIENT_COUNT; index++)
+    {
+        if (index == sender_index || !clients.connected[index]) continue;
+
+        if (0 > sendto(udp_tx_socket, message, message_length, 0,
+        (struct sockaddr *)&clients.addresses[sender_index], sizeof(clients.addresses[sender_index])))
+        {
+            close(udp_rx_socket);
+            close(udp_tx_socket);
+            perror("Failed to send message");
+            exit(EXIT_FAILURE);
+        }
     }
 }
 
@@ -98,7 +110,13 @@ void server_init(void)
 
     if ((udp_rx_socket = socket(AF_INET, SOCK_DGRAM, 0)) <= 0)
     {
-        perror("Failed to create socket");
+        perror("Failed to create rx socket");
+        exit(EXIT_FAILURE);
+    }
+
+    if ((udp_tx_socket = socket(AF_INET, SOCK_DGRAM, 0)) <= 0)
+    {
+        perror("Failed to create tx socket");
         exit(EXIT_FAILURE);
     }
 
@@ -110,24 +128,28 @@ void server_init(void)
         perror("Could not bind socket");
         exit(EXIT_FAILURE);
     }
-
 }
 
 void server_loop(void)
 {
-    printf("Server Loop.\n");
+    Message_t incoming_message;
+    char outgoing_buffer[MSG_BUFF_LENGTH + ADDRESS_BUFF_LENGTH + 4];
 
-    socklen_t peer_address_length = sizeof(peer_address);
+    static struct sockaddr_in client_address = { .sin_family = AF_INET };
+    socklen_t client_address_length = sizeof(client_address);
     int8_t client_index = -1;
+
+    printf("Server Loop.\n");
 
     while(true)
     {
         memset(&incoming_message, 0, sizeof(incoming_message));
-        int bytes_received = recvfrom(udp_rx_socket, &incoming_message, sizeof(incoming_message), 0, (struct sockaddr*)&peer_address, &peer_address_length);
+        int bytes_received = recvfrom(udp_rx_socket, &incoming_message, sizeof(incoming_message), 0, (struct sockaddr*)&client_address, &client_address_length);
 
         if (bytes_received <= 0)
         {
             close(udp_rx_socket);
+            close(udp_tx_socket);
             perror("Failed to receive bytes");
             exit(EXIT_FAILURE);
         }
@@ -135,16 +157,16 @@ void server_loop(void)
         switch (incoming_message.header)
         {
             case MESSAGE_UNDEFINED:
-                printf("Received a packet from %s:%d -- Message: %s\n", inet_ntoa(peer_address.sin_addr), ntohs(peer_address.sin_port), incoming_message.body);
+                printf("Received a packet from %s:%d -- Message: %s\n", inet_ntoa(client_address.sin_addr), ntohs(client_address.sin_port), incoming_message.body);
                 break;
             case MESSAGE_JOIN:
-                handle_client_join(incoming_message.body, peer_address.sin_addr.s_addr);
+                handle_client_join(incoming_message.body, &client_address);
                 break;
             case MESSAGE_QUIT:
-                handle_client_quit(peer_address.sin_addr.s_addr);
+                handle_client_quit(&client_address);
                 break;
             case MESSAGE_TEXT:
-                client_index = get_matching_client_index(peer_address.sin_addr.s_addr);
+                client_index = get_matching_client_index(&client_address);
 
                 if (client_index == -1)
                 {
@@ -159,5 +181,6 @@ void server_loop(void)
     }
 
     close(udp_rx_socket);
+    close(udp_tx_socket);
     exit(EXIT_SUCCESS);
 }
