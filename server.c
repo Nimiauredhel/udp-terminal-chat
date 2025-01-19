@@ -37,34 +37,45 @@ static int8_t get_matching_client_index(struct sockaddr_in *address)
     return -1;
 }
 
-void forward_message_to_clients(int8_t sender_index, char *message, const char *format)
+void forward_message_to_clients(int8_t subject_client_index, char *message, const char *format, bool to_subject, bool local_print)
 {
     char full_message[MSG_BUFF_LENGTH];
     size_t message_length;
     socklen_t peer_address_length;
 
-    if (message == NULL)
+    if (message != NULL && format != NULL)
     {
         sprintf(full_message, format,
-                sender_index == -1 ? "?" : clients.names[sender_index],
-                inet_ntoa(clients.addresses[sender_index].sin_addr),
-                ntohs(clients.addresses[sender_index].sin_port));
+                subject_client_index == -1 ? "?" : clients.names[subject_client_index],
+                inet_ntoa(clients.addresses[subject_client_index].sin_addr),
+                ntohs(clients.addresses[subject_client_index].sin_port),
+                message);
+    }
+    else if (format != NULL)
+    {
+        sprintf(full_message, format,
+                subject_client_index == -1 ? "?" : clients.names[subject_client_index],
+                inet_ntoa(clients.addresses[subject_client_index].sin_addr),
+                ntohs(clients.addresses[subject_client_index].sin_port));
+    }
+    else if (message != NULL)
+    {
+        sprintf(full_message, "%s", message);
     }
     else
     {
-        sprintf(full_message, format,
-                sender_index == -1 ? "?" : clients.names[sender_index],
-                inet_ntoa(clients.addresses[sender_index].sin_addr),
-                ntohs(clients.addresses[sender_index].sin_port),
-                message);
+        // TODO: this function sucks, make it not suck
+        return;
     }
 
-    printf("%s\n", full_message);
     message_length = strlen(full_message) + 1;
 
     for (int8_t index = 0; index < MAX_CLIENT_COUNT; index++)
     {
-        if (index == sender_index || !clients.connected[index]) continue;
+        if (!clients.connected[index]
+            || (to_subject && index != subject_client_index)
+            || (!to_subject && index == subject_client_index))
+            continue;
 
         peer_address_length = sizeof(clients.addresses[index]);
 
@@ -78,6 +89,11 @@ void forward_message_to_clients(int8_t sender_index, char *message, const char *
         }
 
         //printf("Forwarded message to %s (%s:%u).\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port));
+    }
+
+    if (local_print)
+    {
+        printf("%s\n", full_message);
     }
 }
 
@@ -98,14 +114,29 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
         // found room, add client to list
         else
         {
+            char client_list[MSG_BUFF_LENGTH] = {0};
             char port[ADDRESS_BUFF_LENGTH];
             char name[ADDRESS_BUFF_LENGTH];
             char *token;
             char *search = ":";
             uint16_t port_int;
 
-            clients.connected[index] = true;
+            strcat(client_list, "Welcome! Currently here:\n");
+
+            for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
+            {
+                if (clients.connected[i])
+                {
+                    strcat(client_list, "  ");
+                    strcat(client_list, clients.names[i]);
+                    strcat(client_list, "\n");
+                }
+            }
+
+            strcat(client_list, "--------\n");
+
             clients.addresses[index] = *address;
+            clients.connected[index] = true;
 
             token = strtok(join_message, search);
             sprintf(port, "%s", token);
@@ -117,7 +148,8 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
             clients.addresses[index].sin_port = port_int;
             sprintf(clients.names[index], "%s", name);
 
-            forward_message_to_clients(index, NULL, msg_format_join);
+            forward_message_to_clients(index, client_list, NULL, true, false);
+            forward_message_to_clients(index, NULL, msg_format_join, false, true);
         }
     }
     // existing client, reset timeout
@@ -134,7 +166,7 @@ void handle_client_quit(struct sockaddr_in *address)
     if (index != -1)
     {
         clients.connected[index] = false;
-        forward_message_to_clients(index, NULL, msg_format_quit);
+        forward_message_to_clients(index, NULL, msg_format_quit, false, true);
     }
 }
 
@@ -250,7 +282,7 @@ void server_loop(void)
                 break;
             case MESSAGE_TEXT:
                 client_index = get_matching_client_index(&client_address);
-                forward_message_to_clients(client_index, incoming_message.body, msg_format_text);
+                forward_message_to_clients(client_index, incoming_message.body, msg_format_text, false, true);
                 break;
         }
     }
