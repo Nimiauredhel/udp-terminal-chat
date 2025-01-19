@@ -51,14 +51,13 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
         // found room, add client to list
         else
         {
-
             clients.connected[index] = true;
             clients.addresses[index] = *address;
 
             char port[ADDRESS_BUFF_LENGTH * 2 + 4];
             char *name;
             uint16_t port_int;
-            strcpy(port, join_message);
+            sprintf(port, "%s", join_message);
             strtok_r(port, ":", &name);
             port_int = atoi(port);
 
@@ -90,13 +89,20 @@ void handle_client_quit(struct sockaddr_in *address)
 
 void forward_message_to_clients(int8_t sender_index, char *message)
 {
-    size_t message_length = strlen(message) + 1;
+    char full_message[ADDRESS_BUFF_LENGTH + MSG_BUFF_LENGTH + 4];
+    size_t message_length;
+
+    sprintf(full_message, "%s: %s",
+            sender_index == -1 ? "?" : clients.names[sender_index], message);
+
+    printf("%s\n", full_message);
+    message_length = strlen(full_message) + 1;
 
     for (int8_t index = 0; index < MAX_CLIENT_COUNT; index++)
     {
         if (/*index == sender_index || */!clients.connected[index]) continue;
 
-        if (0 > sendto(udp_tx_socket, message, message_length, 0,
+        if (0 > sendto(udp_tx_socket, full_message, message_length, 0,
         (struct sockaddr *)&clients.addresses[sender_index], sizeof(clients.addresses[sender_index])))
         {
             close(udp_rx_socket);
@@ -104,7 +110,11 @@ void forward_message_to_clients(int8_t sender_index, char *message)
             perror("Failed to send message");
             exit(EXIT_FAILURE);
         }
+
+        printf("Forwarded message to %s (%s:%d).\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), clients.addresses[index].sin_port);
     }
+
+    printf("Done forwarding messages.\n");
 }
 
 void server_init(void)
@@ -182,15 +192,7 @@ void server_loop(void)
                 break;
             case MESSAGE_TEXT:
                 client_index = get_matching_client_index(&client_address);
-
-                if (client_index == -1)
-                {
-                    printf("Unknown: %s\n", incoming_message.body);
-                }
-                else
-                {
-                    printf("%s: %s\n", clients.names[client_index], incoming_message.body);
-                }
+                forward_message_to_clients(client_index, incoming_message.body);
                 break;
         }
     }

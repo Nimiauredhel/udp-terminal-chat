@@ -20,6 +20,7 @@ static void* client_listen(void *arg)
 {
     while (true)
     {
+        printf("Listening...\n");
         memset(&incoming_buffer, 0, sizeof(incoming_buffer));
         int bytes_received = recvfrom(udp_rx_socket, &incoming_buffer, sizeof(incoming_buffer), 0, (struct sockaddr*)&peer_address, &peer_address_length);
 
@@ -31,7 +32,7 @@ static void* client_listen(void *arg)
             exit(EXIT_FAILURE);
         }
 
-        printf("\b\b\b\b\b\b\b\n%s\nMessage:", incoming_buffer);
+        printf("\n%s\nMessage:", incoming_buffer);
     }
 }
 
@@ -51,13 +52,14 @@ void client_init(void)
     printf("Peer port: ");
     fgets(peer_port, address_buff_length, stdin);
     peer_port[strcspn(peer_port, "\n")] = 0;
+    peer_port_int = atoi(peer_port);
 
-    if (strlen(peer_port) < 1)
+    if (peer_port_int <= 1024)
     {
         sprintf(peer_port, "%s", "8080");
+        peer_port_int = 8080;
     }
 
-    peer_port_int = atoi(peer_port);
     peer_address.sin_port = htons(peer_port_int);
 
     if (inet_pton(AF_INET, peer_ip, &(peer_address.sin_addr)) <= 0)
