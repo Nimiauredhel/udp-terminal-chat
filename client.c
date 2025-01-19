@@ -1,6 +1,7 @@
 #include "client.h"
 #include "sys/time.h"
 #include "sys/types.h"
+#include "pthread.h"
 
 static int udp_socket;
 static int peer_port_int;
@@ -14,8 +15,10 @@ static struct sockaddr_in peer_address = { .sin_family = AF_INET };
 static struct sockaddr_in local_address = { .sin_family = AF_INET, .sin_addr.s_addr = INADDR_ANY };
 socklen_t peer_address_length = sizeof(peer_address);
 
-static void client_listen(void)
+static void* client_listen(void *arg)
 {
+    while (true)
+    {
         memset(&incoming_buffer, 0, sizeof(incoming_buffer));
         int bytes_received = recvfrom(udp_socket, &incoming_buffer, sizeof(incoming_buffer), 0, (struct sockaddr*)&peer_address, &peer_address_length);
 
@@ -26,7 +29,8 @@ static void client_listen(void)
             exit(EXIT_FAILURE);
         }
 
-        printf("%s", incoming_buffer);
+        printf("\b\b\b\b\b\b\b\n%s\nMessage:", incoming_buffer);
+    }
 }
 
 void client_init(void)
@@ -96,6 +100,9 @@ void client_loop(void)
     printf("Message: ");
     fflush(stdout);
 
+    pthread_t rx_thread;
+    pthread_create(&rx_thread, NULL, &client_listen, NULL);
+
     while(true)
     {
         timeout.tv_sec = 0;
@@ -119,8 +126,6 @@ void client_loop(void)
             strcpy(outgoing_message.body, client_name);
             msg_length = strlen(client_name) + 4;
             outgoing_message.header = MESSAGE_JOIN;
-
-            client_listen();
         }
 
         if (msg_length <= 4) break;
