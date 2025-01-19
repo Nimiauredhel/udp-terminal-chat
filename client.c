@@ -84,6 +84,8 @@ void client_init(void)
         exit(EINVAL);
     }
 
+    local_address.sin_port = 8090;
+
     //bind the socket to the address/port
     if (bind(udp_rx_socket, (struct sockaddr *)&local_address, sizeof(local_address)) < 0)
     {
@@ -139,7 +141,7 @@ void client_loop(void)
             outgoing_message.header = MESSAGE_JOIN;
         }
 
-        msg_length = strlen(outgoing_message.body) + sizeof(MessageHeader_t) + 4;
+        msg_length = strlen(outgoing_message.body) + 4;
 
         if (msg_length <= 4) break;
 
