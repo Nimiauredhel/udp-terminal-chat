@@ -4,6 +4,8 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <arpa/inet.h>
+#include <netdb.h>
+#include <ifaddrs.h>
 
 #define ADDRESS_BUFF_LENGTH 16
 #define MSG_BUFF_LENGTH 511

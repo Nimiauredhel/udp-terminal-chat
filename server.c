@@ -1,5 +1,5 @@
+#define _GNU_SOURCE
 #include "server.h"
-#include "string.h"
 
 static int udp_rx_socket;
 static int udp_tx_socket;
@@ -173,19 +173,49 @@ void server_init(void)
         perror("Could not bind rx socket");
         exit(EXIT_FAILURE);
     }
+
+    struct ifaddrs *addresses_head;
+
+    if (getifaddrs(&addresses_head) < 0)
+    {
+        perror("Could not acquire addresses list.");
+        exit(EXIT_FAILURE);
+    }
+
+    printf("Server initialization complete.\nAddresses:\n");
+
+    struct ifaddrs *addresses_current = addresses_head;
+    char host[NI_MAXHOST];
+    
+    while(addresses_current != NULL)
+    {
+        if (addresses_current->ifa_addr != NULL
+            && addresses_current->ifa_addr->sa_family == AF_INET)
+        {
+            if(getnameinfo(addresses_current->ifa_addr, sizeof(struct sockaddr_in),
+                host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST) < 0)
+            {
+                perror("getnameinfo failed");
+                exit(EXIT_FAILURE);
+            }
+
+            printf("    %s\n", host);
+        }
+
+        addresses_current = addresses_current->ifa_next;
+    }
+
+    freeifaddrs(addresses_head);
 }
 
 void server_loop(void)
 {
+    printf ("Server online.\n");
     Message_t incoming_message;
 
     static struct sockaddr_in client_address = { .sin_family = AF_INET };
     socklen_t client_address_length = sizeof(client_address);
     int8_t client_index = -1;
-
-    printf("Server online at address: %s:%u.\n",
-            inet_ntoa(local_address.sin_addr),
-            ntohs(local_address.sin_port));
 
     while(true)
     {
@@ -217,6 +247,8 @@ void server_loop(void)
                 break;
         }
     }
+
+    printf("Terminating.\n");
 
     close(udp_rx_socket);
     close(udp_tx_socket);
