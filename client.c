@@ -1,7 +1,4 @@
 #include "client.h"
-#include "sys/time.h"
-#include "sys/types.h"
-#include "pthread.h"
 
 static int udp_tx_socket;
 static int udp_rx_socket;
