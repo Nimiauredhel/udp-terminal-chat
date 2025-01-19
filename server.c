@@ -70,7 +70,7 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
             clients.addresses[index].sin_port = htons(port_int);
 
             sprintf(clients.names[index], "%s", name);
-            printf("%s (%s:%d) has joined the conversation.\n", clients.names[index], inet_ntoa(address->sin_addr), address->sin_port);
+            printf("%s (%s:%u) has joined the conversation.\n", clients.names[index], inet_ntoa(address->sin_addr), address->sin_port);
         }
     }
     // existing client, reset timeout
@@ -86,7 +86,10 @@ void handle_client_quit(struct sockaddr_in *address)
     
     if (index != -1)
     {
-        printf("%s left the conversation.\n", clients.names[index]);
+        printf("%s (%s:%u) has left the conversation.\n",
+                clients.names[index],
+                inet_ntoa(clients.addresses[index].sin_addr),
+                clients.addresses[index].sin_port);
         clients.connected[index] = false;
     }
 }
@@ -97,8 +100,11 @@ void forward_message_to_clients(int8_t sender_index, char *message)
     size_t message_length;
     socklen_t peer_address_length;
 
-    sprintf(full_message, "%s: %s",
-            sender_index == -1 ? "?" : clients.names[sender_index], message);
+    sprintf(full_message, "%s (%s:%u): %s",
+            sender_index == -1 ? "?" : clients.names[sender_index],
+            inet_ntoa(clients.addresses[sender_index].sin_addr),
+            clients.addresses[sender_index].sin_port,
+            message);
 
     printf("%s\n", full_message);
     message_length = strlen(full_message) + 1;
@@ -114,7 +120,7 @@ void forward_message_to_clients(int8_t sender_index, char *message)
         peer_address_length))
         {
             char err_msg[128];
-            sprintf(err_msg, "Failed to send message to %s:%d", inet_ntoa(clients.addresses[index].sin_addr), clients.addresses[index].sin_port); 
+            sprintf(err_msg, "Failed to send message to %s:%u", inet_ntoa(clients.addresses[index].sin_addr), clients.addresses[index].sin_port); 
             close(udp_rx_socket);
             close(udp_tx_socket);
             perror(err_msg);
