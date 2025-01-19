@@ -123,8 +123,9 @@ void client_loop(void)
         }
         else
         {
+            sprintf(outgoing_message.body, "%d:%s", local_address.sin_port, client_name);
+            msg_length = ADDRESS_BUFF_LENGTH + strlen(client_name) + 4;
             strcpy(outgoing_message.body, client_name);
-            msg_length = strlen(client_name) + 4;
             outgoing_message.header = MESSAGE_JOIN;
         }
 

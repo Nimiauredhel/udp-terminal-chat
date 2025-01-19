@@ -32,7 +32,7 @@ static int8_t get_matching_client_index(struct sockaddr_in *address)
     return -1;
 }
 
-static void handle_client_join(char *name, struct sockaddr_in *address)
+static void handle_client_join(char *join_message, struct sockaddr_in *address)
 {
     int8_t index = get_matching_client_index(address);
 
@@ -49,10 +49,19 @@ static void handle_client_join(char *name, struct sockaddr_in *address)
         // found room, add client to list
         else
         {
+
             clients.connected[index] = true;
             clients.addresses[index] = *address;
+
+            char *name;
+            strtok_r(join_message, ":", &name);
+
+            printf("Token one: %s\n", join_message);
+            clients.addresses[index].sin_port = atoi(join_message);
+
+            printf("Token two: %s\n", name);
             strcpy(clients.names[index], name);
-            printf("%s has joined the conversation.\n", clients.names[index]);
+            printf("%s (%s:%d) has joined the conversation.\n", clients.names[index], inet_ntoa(address->sin_addr), address->sin_port);
         }
     }
     // existing client, reset timeout
@@ -79,7 +88,7 @@ void forward_message_to_clients(int8_t sender_index, char *message)
 
     for (int8_t index = 0; index < MAX_CLIENT_COUNT; index++)
     {
-        if (index == sender_index || !clients.connected[index]) continue;
+        if (/*index == sender_index || */!clients.connected[index]) continue;
 
         if (0 > sendto(udp_tx_socket, message, message_length, 0,
         (struct sockaddr *)&clients.addresses[sender_index], sizeof(clients.addresses[sender_index])))
