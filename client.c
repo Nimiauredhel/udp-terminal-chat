@@ -9,7 +9,7 @@ static struct sockaddr_in local_address = { .sin_family = AF_INET, .sin_addr.s_a
 static void* client_listen(void *arg)
 {
     struct sockaddr_in incoming_address = { .sin_family = AF_INET };
-    char incoming_buffer[ADDRESS_BUFF_LENGTH + MSG_BUFF_LENGTH + 4];
+    char incoming_buffer[MSG_BUFF_LENGTH];
     socklen_t incoming_address_length = sizeof(incoming_address);
 
     while (true)
@@ -146,11 +146,11 @@ void client_loop(void)
             outgoing_message.header = MESSAGE_JOIN;
         }
 
-        msg_length = strlen(outgoing_message.body) + 4;
+        msg_length = strlen(outgoing_message.body);
 
-        if (msg_length <= 4) break;
+        if (msg_length <= 0) break;
 
-        if (0 > sendto(udp_socket, &outgoing_message, msg_length, 0,
+        if (0 > sendto(udp_socket, &outgoing_message, sizeof(MessageHeader_t) + msg_length + 1, 0,
         (struct sockaddr *)&server_address, sizeof(server_address)))
         {
             close(udp_socket);
@@ -168,12 +168,12 @@ void client_loop(void)
     // send "leaving" message
     memset(&outgoing_message, 0, sizeof(outgoing_message));
     sprintf(outgoing_message.body, "%s", client_name);
-    msg_length = strlen(outgoing_message.body) + 4;
+    msg_length = strlen(outgoing_message.body);
     outgoing_message.header = MESSAGE_QUIT;
 
     pthread_cancel(rx_thread);
 
-    sendto(udp_socket, &outgoing_message, msg_length, 0,
+    sendto(udp_socket, &outgoing_message, msg_length + 1, 0,
     (struct sockaddr *)&server_address, sizeof(server_address));
 
     close(udp_socket);

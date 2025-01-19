@@ -1,6 +1,10 @@
 #define _GNU_SOURCE
 #include "server.h"
 
+static const char *msg_format_text = "%s (%s:%u):\n  %s";
+static const char *msg_format_join = "%s (%s:%u) has joined the conversation.";
+static const char *msg_format_quit = "%s (%s:%u) has left the conversation.";
+
 static int udp_rx_socket;
 static int udp_tx_socket;
 
@@ -31,6 +35,50 @@ static int8_t get_matching_client_index(struct sockaddr_in *address)
     }
 
     return -1;
+}
+
+void forward_message_to_clients(int8_t sender_index, char *message, const char *format)
+{
+    char full_message[MSG_BUFF_LENGTH];
+    size_t message_length;
+    socklen_t peer_address_length;
+
+    if (message == NULL)
+    {
+        sprintf(full_message, format,
+                sender_index == -1 ? "?" : clients.names[sender_index],
+                inet_ntoa(clients.addresses[sender_index].sin_addr),
+                ntohs(clients.addresses[sender_index].sin_port));
+    }
+    else
+    {
+        sprintf(full_message, format,
+                sender_index == -1 ? "?" : clients.names[sender_index],
+                inet_ntoa(clients.addresses[sender_index].sin_addr),
+                ntohs(clients.addresses[sender_index].sin_port),
+                message);
+    }
+
+    printf("%s\n", full_message);
+    message_length = strlen(full_message) + 1;
+
+    for (int8_t index = 0; index < MAX_CLIENT_COUNT; index++)
+    {
+        if (index == sender_index || !clients.connected[index]) continue;
+
+        peer_address_length = sizeof(clients.addresses[index]);
+
+        if (0 > sendto(udp_tx_socket, full_message, message_length, 0,
+        (struct sockaddr *)&clients.addresses[index],
+        peer_address_length))
+        {
+            printf("Failed to forward message to %s:%u",
+                    inet_ntoa(clients.addresses[index].sin_addr),
+                    ntohs(clients.addresses[index].sin_port)); 
+        }
+
+        //printf("Forwarded message to %s (%s:%u).\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port));
+    }
 }
 
 static void handle_client_join(char *join_message, struct sockaddr_in *address)
@@ -67,9 +115,9 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
 
             // no htons here - the representation is of network order
             clients.addresses[index].sin_port = port_int;
-
             sprintf(clients.names[index], "%s", name);
-            printf("%s (%s:%u) has joined the conversation.\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port));
+
+            forward_message_to_clients(index, NULL, msg_format_join);
         }
     }
     // existing client, reset timeout
@@ -85,45 +133,8 @@ void handle_client_quit(struct sockaddr_in *address)
     
     if (index != -1)
     {
-        printf("%s (%s:%u) has left the conversation.\n",
-                clients.names[index],
-                inet_ntoa(clients.addresses[index].sin_addr),
-                ntohs(clients.addresses[index].sin_port));
         clients.connected[index] = false;
-    }
-}
-
-void forward_message_to_clients(int8_t sender_index, char *message)
-{
-    char full_message[ADDRESS_BUFF_LENGTH + MSG_BUFF_LENGTH + 4];
-    size_t message_length;
-    socklen_t peer_address_length;
-
-    sprintf(full_message, "%s (%s:%u): %s",
-            sender_index == -1 ? "?" : clients.names[sender_index],
-            inet_ntoa(clients.addresses[sender_index].sin_addr),
-            ntohs(clients.addresses[sender_index].sin_port),
-            message);
-
-    printf("%s\n", full_message);
-    message_length = strlen(full_message) + 1;
-
-    for (int8_t index = 0; index < MAX_CLIENT_COUNT; index++)
-    {
-        if (index == sender_index || !clients.connected[index]) continue;
-
-        peer_address_length = sizeof(clients.addresses[index]);
-
-        if (0 > sendto(udp_tx_socket, full_message, message_length, 0,
-        (struct sockaddr *)&clients.addresses[index],
-        peer_address_length))
-        {
-            printf("Failed to forward message to %s:%u",
-                    inet_ntoa(clients.addresses[index].sin_addr),
-                    ntohs(clients.addresses[index].sin_port)); 
-        }
-
-        //printf("Forwarded message to %s (%s:%u).\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port));
+        forward_message_to_clients(index, NULL, msg_format_quit);
     }
 }
 
@@ -239,7 +250,7 @@ void server_loop(void)
                 break;
             case MESSAGE_TEXT:
                 client_index = get_matching_client_index(&client_address);
-                forward_message_to_clients(client_index, incoming_message.body);
+                forward_message_to_clients(client_index, incoming_message.body, msg_format_text);
                 break;
         }
     }
