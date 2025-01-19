@@ -23,7 +23,8 @@ static int8_t get_matching_client_index(struct sockaddr_in *address)
     for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
     {
         if (clients.connected[i]
-            && clients.addresses[i].sin_addr.s_addr == address->sin_addr.s_addr)
+            && clients.addresses[i].sin_addr.s_addr == address->sin_addr.s_addr
+            && clients.addresses[i].sin_port == address->sin_port)
         {
             return i;
         }
@@ -109,7 +110,7 @@ void forward_message_to_clients(int8_t sender_index, char *message)
 
     for (int8_t index = 0; index < MAX_CLIENT_COUNT; index++)
     {
-        if (/*index == sender_index || */!clients.connected[index]) continue;
+        if (index == sender_index || !clients.connected[index]) continue;
 
         peer_address_length = sizeof(clients.addresses[index]);
 
