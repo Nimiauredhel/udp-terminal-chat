@@ -25,8 +25,10 @@ static int8_t get_matching_client_index(struct sockaddr_in *address)
     for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
     {
         if (clients.connected[i]
-            && clients.addresses[i].sin_addr.s_addr == address->sin_addr.s_addr
-            && clients.addresses[i].sin_port == address->sin_port) return i;
+            && clients.addresses[i].sin_addr.s_addr == address->sin_addr.s_addr)
+        {
+            return i;
+        }
     }
 
     return -1;
@@ -53,11 +55,15 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
             clients.connected[index] = true;
             clients.addresses[index] = *address;
 
+            char port[ADDRESS_BUFF_LENGTH * 2 + 4];
             char *name;
-            strtok_r(join_message, ":", &name);
+            uint16_t port_int;
+            strcpy(port, join_message);
+            strtok_r(port, ":", &name);
+            port_int = atoi(port);
 
-            printf("Token one: %s\n", join_message);
-            clients.addresses[index].sin_port = atoi(join_message);
+            printf("Token one: %d\n", port_int);
+            clients.addresses[index].sin_port = port_int;
 
             printf("Token two: %s\n", name);
             strcpy(clients.names[index], name);

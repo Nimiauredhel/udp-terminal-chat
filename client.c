@@ -86,8 +86,11 @@ void client_init(void)
 
     if (strlen(client_name) < 1)
     {
-        strcpy(client_name, "Client");
+        sprintf(client_name, "%s", "Client");
     }
+
+    printf("\nSelected name: %s.\n", client_name);
+
 }
 
 void client_loop(void)
@@ -125,7 +128,6 @@ void client_loop(void)
         {
             sprintf(outgoing_message.body, "%d:%s", local_address.sin_port, client_name);
             msg_length = ADDRESS_BUFF_LENGTH + strlen(client_name) + 4;
-            strcpy(outgoing_message.body, client_name);
             outgoing_message.header = MESSAGE_JOIN;
         }
 
