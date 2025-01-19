@@ -87,10 +87,21 @@ void client_init(void)
         exit(EINVAL);
     }
 
-    local_address.sin_port = htons(8090);
 
     //bind the socket to the address/port
-    if (bind(udp_rx_socket, (struct sockaddr *)&local_address, sizeof(local_address)) < 0)
+    uint16_t rx_port = 8079;
+    int bind_result = -1;
+
+    // try range between 8080 and 8100
+    while(bind_result < 0 && rx_port <= 8100)
+    {
+        rx_port++;
+        local_address.sin_port = htons(rx_port);
+        bind_result = bind(udp_rx_socket, (struct sockaddr *)&local_address, sizeof(local_address));
+    }
+
+    // if all 20 ports fail, give up
+    if (bind_result < 0)
     {
         perror("Could not bind socket");
         exit(EXIT_FAILURE);
@@ -105,7 +116,11 @@ void client_init(void)
         sprintf(client_name, "%s", "Client");
     }
 
-    printf("\nSelected name: %s.\n", client_name);
+    printf("\n%s (%s:%u) connecting to server (%s:%u).\n",
+            client_name, inet_ntoa(local_address.sin_addr),
+            ntohs(local_address.sin_port),
+            inet_ntoa(server_address.sin_addr),
+            ntohs(server_address.sin_port));
 }
 
 void client_loop(void)

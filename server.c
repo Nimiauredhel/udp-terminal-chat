@@ -183,7 +183,9 @@ void server_loop(void)
     socklen_t client_address_length = sizeof(client_address);
     int8_t client_index = -1;
 
-    printf("Server Loop.\n");
+    printf("Server online at address: %s:%u.\n",
+            inet_ntoa(local_address.sin_addr),
+            ntohs(local_address.sin_port));
 
     while(true)
     {
