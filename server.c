@@ -1,4 +1,5 @@
 #include "server.h"
+#include "string.h"
 
 static int udp_rx_socket;
 static int rx_port_int;
@@ -51,21 +52,24 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
         // found room, add client to list
         else
         {
+            char port[ADDRESS_BUFF_LENGTH];
+            char name[ADDRESS_BUFF_LENGTH];
+            char *token;
+            char *search = ":";
+            uint16_t port_int;
+
             clients.connected[index] = true;
             clients.addresses[index] = *address;
 
-            char port[ADDRESS_BUFF_LENGTH * 2 + 4];
-            char *name;
-            uint16_t port_int;
-            sprintf(port, "%s", join_message);
-            strtok_r(port, ":", &name);
+            token = strtok(join_message, search);
+            sprintf(port, "%s", token);
             port_int = atoi(port);
+            token = strtok(NULL, search);
+            sprintf(name, "%s", token);
 
-            printf("Token one: %d\n", port_int);
             clients.addresses[index].sin_port = port_int;
 
-            printf("Token two: %s\n", name);
-            strcpy(clients.names[index], name);
+            sprintf(clients.names[index], "%s", name);
             printf("%s (%s:%d) has joined the conversation.\n", clients.names[index], inet_ntoa(address->sin_addr), address->sin_port);
         }
     }
@@ -91,6 +95,7 @@ void forward_message_to_clients(int8_t sender_index, char *message)
 {
     char full_message[ADDRESS_BUFF_LENGTH + MSG_BUFF_LENGTH + 4];
     size_t message_length;
+    socklen_t peer_address_length;
 
     sprintf(full_message, "%s: %s",
             sender_index == -1 ? "?" : clients.names[sender_index], message);
@@ -102,8 +107,11 @@ void forward_message_to_clients(int8_t sender_index, char *message)
     {
         if (/*index == sender_index || */!clients.connected[index]) continue;
 
+        peer_address_length = sizeof(clients.addresses[index]);
+
         if (0 > sendto(udp_tx_socket, full_message, message_length, 0,
-        (struct sockaddr *)&clients.addresses[sender_index], sizeof(clients.addresses[sender_index])))
+        (struct sockaddr *)&clients.addresses[index],
+        peer_address_length))
         {
             close(udp_rx_socket);
             close(udp_tx_socket);
@@ -158,7 +166,6 @@ void server_init(void)
 void server_loop(void)
 {
     Message_t incoming_message;
-    char outgoing_buffer[MSG_BUFF_LENGTH + ADDRESS_BUFF_LENGTH + 4];
 
     static struct sockaddr_in client_address = { .sin_family = AF_INET };
     socklen_t client_address_length = sizeof(client_address);
