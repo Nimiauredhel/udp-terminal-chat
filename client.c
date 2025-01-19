@@ -17,6 +17,9 @@ static void* client_listen(void *arg)
         memset(&incoming_buffer, 0, sizeof(incoming_buffer));
         int bytes_received = recvfrom(udp_socket, &incoming_buffer, sizeof(incoming_buffer), 0, (struct sockaddr*)&incoming_address, &incoming_address_length);
 
+        if (incoming_address.sin_addr.s_addr != server_address.sin_addr.s_addr)
+            continue;
+
         if (bytes_received <= 0)
         {
             close(udp_socket);
