@@ -139,7 +139,7 @@ void client_loop(void)
             outgoing_message.header = MESSAGE_JOIN;
         }
 
-        msg_length = strlen(outgoing_message.body) + 4;
+        msg_length = strlen(outgoing_message.body) + sizeof(MessageHeader_t) + 4;
 
         if (msg_length <= 4) break;
 

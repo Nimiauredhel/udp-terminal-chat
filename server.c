@@ -113,9 +113,11 @@ void forward_message_to_clients(int8_t sender_index, char *message)
         (struct sockaddr *)&clients.addresses[index],
         peer_address_length))
         {
+            char err_msg[128];
+            sprintf(err_msg, "Failed to send message to %s:%d", inet_ntoa(clients.addresses[index].sin_addr), clients.addresses[index].sin_port); 
             close(udp_rx_socket);
             close(udp_tx_socket);
-            perror("Failed to send message");
+            perror(err_msg);
             exit(EXIT_FAILURE);
         }
 
