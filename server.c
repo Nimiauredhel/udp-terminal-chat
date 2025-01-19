@@ -64,10 +64,11 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
             token = strtok(NULL, search);
             sprintf(name, "%s", token);
 
-            clients.addresses[index].sin_port = htons(port_int);
+            // no htons here - the representation is of network order
+            clients.addresses[index].sin_port = port_int;
 
             sprintf(clients.names[index], "%s", name);
-            printf("%s (%s:%u) has joined the conversation.\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), clients.addresses[index].sin_port);
+            printf("%s (%s:%u) has joined the conversation.\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port));
         }
     }
     // existing client, reset timeout
@@ -86,7 +87,7 @@ void handle_client_quit(struct sockaddr_in *address)
         printf("%s (%s:%u) has left the conversation.\n",
                 clients.names[index],
                 inet_ntoa(clients.addresses[index].sin_addr),
-                clients.addresses[index].sin_port);
+                ntohs(clients.addresses[index].sin_port));
         clients.connected[index] = false;
     }
 }
@@ -100,7 +101,7 @@ void forward_message_to_clients(int8_t sender_index, char *message)
     sprintf(full_message, "%s (%s:%u): %s",
             sender_index == -1 ? "?" : clients.names[sender_index],
             inet_ntoa(clients.addresses[sender_index].sin_addr),
-            clients.addresses[sender_index].sin_port,
+            ntohs(clients.addresses[sender_index].sin_port),
             message);
 
     printf("%s\n", full_message);
@@ -117,14 +118,14 @@ void forward_message_to_clients(int8_t sender_index, char *message)
         peer_address_length))
         {
             char err_msg[128];
-            sprintf(err_msg, "Failed to send message to %s:%u", inet_ntoa(clients.addresses[index].sin_addr), clients.addresses[index].sin_port); 
+            sprintf(err_msg, "Failed to send message to %s:%u", inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port)); 
             close(udp_rx_socket);
             close(udp_tx_socket);
             perror(err_msg);
             exit(EXIT_FAILURE);
         }
 
-        printf("Forwarded message to %s (%s:%u).\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), clients.addresses[index].sin_port);
+        printf("Forwarded message to %s (%s:%u).\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port));
     }
 
     printf("Done forwarding messages.\n");
