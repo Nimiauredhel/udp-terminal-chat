@@ -1,8 +1,6 @@
 #include "client.h"
 
-static int udp_tx_socket;
-static int udp_rx_socket;
-
+static int udp_socket;
 static char client_name[ADDRESS_BUFF_LENGTH];
 
 static struct sockaddr_in server_address = { .sin_family = AF_INET };
@@ -17,15 +15,16 @@ static void* client_listen(void *arg)
     while (true)
     {
         memset(&incoming_buffer, 0, sizeof(incoming_buffer));
-        int bytes_received = recvfrom(udp_rx_socket, &incoming_buffer, sizeof(incoming_buffer), 0, (struct sockaddr*)&incoming_address, &incoming_address_length);
+        int bytes_received = recvfrom(udp_socket, &incoming_buffer, sizeof(incoming_buffer), 0, (struct sockaddr*)&incoming_address, &incoming_address_length);
 
         if (bytes_received <= 0)
         {
-            close(udp_rx_socket);
-            close(udp_tx_socket);
+            close(udp_socket);
             perror("Failed to receive bytes");
             exit(EXIT_FAILURE);
         }
+
+        if (strlen(incoming_buffer) < 2) continue;
 
         printf("\b\b\b\b\b\b\b\b\b%s\nMessage: ", incoming_buffer);
         fflush(stdout);
@@ -68,22 +67,13 @@ void client_init(void)
         exit(EINVAL);
     }
 
-    udp_tx_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
 
-    if (udp_tx_socket < 0)
+    if (udp_socket < 0)
     {
         perror("Error in socket creation");
         exit(EINVAL);
     }
-
-    udp_rx_socket = socket(AF_INET, SOCK_DGRAM, 0);
-
-    if (udp_rx_socket < 0)
-    {
-        perror("Error in socket creation");
-        exit(EINVAL);
-    }
-
 
     //bind the socket to the address/port
     uint16_t rx_port = 8079;
@@ -94,7 +84,7 @@ void client_init(void)
     {
         rx_port++;
         local_address.sin_port = htons(rx_port);
-        bind_result = bind(udp_rx_socket, (struct sockaddr *)&local_address, sizeof(local_address));
+        bind_result = bind(udp_socket, (struct sockaddr *)&local_address, sizeof(local_address));
     }
 
     // if all 20 ports fail, give up
@@ -113,9 +103,8 @@ void client_init(void)
         sprintf(client_name, "%s", "Client");
     }
 
-    printf("\n%s (%s:%u) connecting to server (%s:%u).\n",
-            client_name, inet_ntoa(local_address.sin_addr),
-            ntohs(local_address.sin_port),
+    printf("\n%s (port %u) connecting to server (%s:%u).\n",
+            client_name, ntohs(local_address.sin_port),
             inet_ntoa(server_address.sin_addr),
             ntohs(server_address.sin_port));
 }
@@ -161,11 +150,10 @@ void client_loop(void)
 
         if (msg_length <= 4) break;
 
-        if (0 > sendto(udp_rx_socket, &outgoing_message, msg_length, 0,
+        if (0 > sendto(udp_socket, &outgoing_message, msg_length, 0,
         (struct sockaddr *)&server_address, sizeof(server_address)))
         {
-            close(udp_tx_socket);
-            close(udp_rx_socket);
+            close(udp_socket);
             perror("Failed to send message");
             exit(EXIT_FAILURE);
         }
@@ -185,11 +173,10 @@ void client_loop(void)
 
     pthread_cancel(rx_thread);
 
-    sendto(udp_tx_socket, &outgoing_message, msg_length, 0,
+    sendto(udp_socket, &outgoing_message, msg_length, 0,
     (struct sockaddr *)&server_address, sizeof(server_address));
 
-    close(udp_tx_socket);
-    close(udp_rx_socket);
+    close(udp_socket);
     printf("Goodbye!\n");
     exit(EXIT_SUCCESS);
 }
