@@ -19,7 +19,6 @@ static void* client_listen(void *arg)
 
     while (true)
     {
-        printf("Listening...\n");
         memset(&incoming_buffer, 0, sizeof(incoming_buffer));
         int bytes_received = recvfrom(udp_rx_socket, &incoming_buffer, sizeof(incoming_buffer), 0, (struct sockaddr*)&incoming_address, &incoming_address_length);
 
@@ -31,7 +30,8 @@ static void* client_listen(void *arg)
             exit(EXIT_FAILURE);
         }
 
-        printf("\n%s\nMessage:", incoming_buffer);
+        printf("\b\b\b\b\b\b\b\b\b%s\nMessage: ", incoming_buffer);
+        fflush(stdout);
     }
 }
 

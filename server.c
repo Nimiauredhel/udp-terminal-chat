@@ -118,18 +118,13 @@ void forward_message_to_clients(int8_t sender_index, char *message)
         (struct sockaddr *)&clients.addresses[index],
         peer_address_length))
         {
-            char err_msg[64];
-            sprintf(err_msg, "Failed to send message to %s:%u", inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port)); 
-            close(udp_rx_socket);
-            close(udp_tx_socket);
-            perror(err_msg);
-            exit(EXIT_FAILURE);
+            printf("Failed to forward message to %s:%u",
+                    inet_ntoa(clients.addresses[index].sin_addr),
+                    ntohs(clients.addresses[index].sin_port)); 
         }
 
-        printf("Forwarded message to %s (%s:%u).\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port));
+        //printf("Forwarded message to %s (%s:%u).\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port));
     }
-
-    printf("Done forwarding messages.\n");
 }
 
 void server_init(void)
