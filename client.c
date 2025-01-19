@@ -84,7 +84,7 @@ void client_init(void)
         exit(EINVAL);
     }
 
-    local_address.sin_port = 8090;
+    local_address.sin_port = htons(8090);
 
     //bind the socket to the address/port
     if (bind(udp_rx_socket, (struct sockaddr *)&local_address, sizeof(local_address)) < 0)

@@ -67,7 +67,7 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
             token = strtok(NULL, search);
             sprintf(name, "%s", token);
 
-            clients.addresses[index].sin_port = port_int;
+            clients.addresses[index].sin_port = htons(port_int);
 
             sprintf(clients.names[index], "%s", name);
             printf("%s (%s:%d) has joined the conversation.\n", clients.names[index], inet_ntoa(address->sin_addr), address->sin_port);
@@ -129,9 +129,9 @@ void forward_message_to_clients(int8_t sender_index, char *message)
 
 void server_init(void)
 {
-    printf("Server Init.\n");
+    printf("Server mode initializing.\n");
 
-    printf("Receive on port: ");
+    printf("Input Rx port (leave blank for 8080): ");
     fgets(rx_port, address_buff_length, stdin);
     rx_port[strcspn(rx_port, "\n")] = 0;
 

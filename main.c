@@ -28,7 +28,6 @@ int main(int argc, char *argv[])
         case 1:
             client_init();
             client_loop();
-            break;
     }
 
     return EXIT_SUCCESS;
@@ -55,10 +54,10 @@ int8_t get_selection_from_args(int argc, char *argv[])
 
 void print_usage(const char* process_name)
 {
-        printf("Usage: %s <mode>\nAvailable modes:\n", process_name);
+    printf("Usage: %s <mode>\nAvailable modes:\n", process_name);
 
-        for (uint8_t i = 0; i < MODES_COUNT; i++)
-        {
-            printf("  [%s]\n", modes[i]);
-        }
+    for (uint8_t i = 0; i < MODES_COUNT; i++)
+    {
+        printf("  [%s]\n", modes[i]);
+    }
 }
