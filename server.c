@@ -8,7 +8,7 @@ static ClientsData_t clients = {0};
 
 static struct sockaddr_in local_address = { .sin_family = AF_INET, .sin_addr.s_addr = INADDR_ANY };
 
-static int8_t get_free_client_index()
+static int8_t get_free_client_index(void)
 {
     for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
     {
@@ -117,7 +117,7 @@ void forward_message_to_clients(int8_t sender_index, char *message)
         (struct sockaddr *)&clients.addresses[index],
         peer_address_length))
         {
-            char err_msg[128];
+            char err_msg[64];
             sprintf(err_msg, "Failed to send message to %s:%u", inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port)); 
             close(udp_rx_socket);
             close(udp_tx_socket);
@@ -188,7 +188,7 @@ void server_loop(void)
     while(true)
     {
         memset(&incoming_message, 0, sizeof(incoming_message));
-        int bytes_received = recvfrom(udp_rx_socket, &incoming_message, sizeof(incoming_message), 0, (struct sockaddr*)&client_address, &client_address_length);
+        ssize_t bytes_received = recvfrom(udp_rx_socket, &incoming_message, sizeof(incoming_message), 0, (struct sockaddr*)&client_address, &client_address_length);
 
         if (bytes_received <= 0)
         {

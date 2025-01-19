@@ -6,23 +6,22 @@
 static int udp_tx_socket;
 static int udp_rx_socket;
 
-static char peer_ip[ADDRESS_BUFF_LENGTH];
-
 static char client_name[ADDRESS_BUFF_LENGTH];
-static Message_t outgoing_message;
-static char incoming_buffer[ADDRESS_BUFF_LENGTH + MSG_BUFF_LENGTH + 4];
 
-static struct sockaddr_in peer_address = { .sin_family = AF_INET };
+static struct sockaddr_in server_address = { .sin_family = AF_INET };
 static struct sockaddr_in local_address = { .sin_family = AF_INET, .sin_addr.s_addr = INADDR_ANY };
-socklen_t peer_address_length = sizeof(peer_address);
 
 static void* client_listen(void *arg)
 {
+    struct sockaddr_in incoming_address = { .sin_family = AF_INET };
+    char incoming_buffer[ADDRESS_BUFF_LENGTH + MSG_BUFF_LENGTH + 4];
+    socklen_t incoming_address_length = sizeof(incoming_address);
+
     while (true)
     {
         printf("Listening...\n");
         memset(&incoming_buffer, 0, sizeof(incoming_buffer));
-        int bytes_received = recvfrom(udp_rx_socket, &incoming_buffer, sizeof(incoming_buffer), 0, (struct sockaddr*)&peer_address, &peer_address_length);
+        int bytes_received = recvfrom(udp_rx_socket, &incoming_buffer, sizeof(incoming_buffer), 0, (struct sockaddr*)&incoming_address, &incoming_address_length);
 
         if (bytes_received <= 0)
         {
@@ -38,34 +37,35 @@ static void* client_listen(void *arg)
 
 void client_init(void)
 {
-    char peer_port[ADDRESS_BUFF_LENGTH];
-    int peer_port_int;
+    char server_ip[ADDRESS_BUFF_LENGTH];
+    char server_port[ADDRESS_BUFF_LENGTH];
+    uint16_t server_port_int;
 
     printf("Client mode initializing.\nInput server IP: ");
 
-    fgets(peer_ip, address_buff_length, stdin);
-    peer_ip[strcspn(peer_ip, "\n")] = 0;
+    fgets(server_ip, address_buff_length, stdin);
+    server_ip[strcspn(server_ip, "\n")] = 0;
 
-    if (strlen(peer_ip) < 7)
+    if (strlen(server_ip) < 7)
     {
-        sprintf(peer_ip, "%s", "127.0.0.1");
+        sprintf(server_ip, "%s", "127.0.0.1");
     }
 
     printf("Input server port: ");
 
-    fgets(peer_port, address_buff_length, stdin);
-    peer_port[strcspn(peer_port, "\n")] = 0;
-    peer_port_int = atoi(peer_port);
+    fgets(server_port, address_buff_length, stdin);
+    server_port[strcspn(server_port, "\n")] = 0;
+    server_port_int = atoi(server_port);
 
-    if (peer_port_int <= 1024)
+    if (server_port_int <= 1024)
     {
         printf("Defaulting to port 8080.\n");
-        peer_port_int = 8080;
+        server_port_int = 8080;
     }
 
-    peer_address.sin_port = htons(peer_port_int);
+    server_address.sin_port = htons(server_port_int);
 
-    if (inet_pton(AF_INET, peer_ip, &(peer_address.sin_addr)) <= 0)
+    if (inet_pton(AF_INET, server_ip, &(server_address.sin_addr)) <= 0)
     {
         perror("Bad IP address");
         exit(EINVAL);
@@ -110,6 +110,7 @@ void client_init(void)
 
 void client_loop(void)
 {
+    Message_t outgoing_message;
     fd_set input_set;
     int has_input;
     struct timeval timeout;
@@ -149,7 +150,7 @@ void client_loop(void)
         if (msg_length <= 4) break;
 
         if (0 > sendto(udp_rx_socket, &outgoing_message, msg_length, 0,
-        (struct sockaddr *)&peer_address, sizeof(peer_address)))
+        (struct sockaddr *)&server_address, sizeof(server_address)))
         {
             close(udp_tx_socket);
             close(udp_rx_socket);
@@ -173,7 +174,7 @@ void client_loop(void)
     pthread_cancel(rx_thread);
 
     sendto(udp_tx_socket, &outgoing_message, msg_length, 0,
-    (struct sockaddr *)&peer_address, sizeof(peer_address));
+    (struct sockaddr *)&server_address, sizeof(server_address));
 
     close(udp_tx_socket);
     close(udp_rx_socket);
