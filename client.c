@@ -3,7 +3,8 @@
 #include "sys/types.h"
 #include "pthread.h"
 
-static int udp_socket;
+static int udp_tx_socket;
+static int udp_rx_socket;
 static int peer_port_int;
 static char peer_ip[ADDRESS_BUFF_LENGTH];
 static char peer_port[ADDRESS_BUFF_LENGTH];
@@ -20,11 +21,12 @@ static void* client_listen(void *arg)
     while (true)
     {
         memset(&incoming_buffer, 0, sizeof(incoming_buffer));
-        int bytes_received = recvfrom(udp_socket, &incoming_buffer, sizeof(incoming_buffer), 0, (struct sockaddr*)&peer_address, &peer_address_length);
+        int bytes_received = recvfrom(udp_rx_socket, &incoming_buffer, sizeof(incoming_buffer), 0, (struct sockaddr*)&peer_address, &peer_address_length);
 
         if (bytes_received <= 0)
         {
-            close(udp_socket);
+            close(udp_rx_socket);
+            close(udp_tx_socket);
             perror("Failed to receive bytes");
             exit(EXIT_FAILURE);
         }
@@ -43,7 +45,7 @@ void client_init(void)
 
     if (strlen(peer_ip) < 7)
     {
-        strcpy(peer_ip, "127.0.0.1");
+        sprintf(peer_ip, "%s", "127.0.0.1");
     }
 
     printf("Peer port: ");
@@ -52,12 +54,11 @@ void client_init(void)
 
     if (strlen(peer_port) < 1)
     {
-        strcpy(peer_port, "8080");
+        sprintf(peer_port, "%s", "8080");
     }
 
     peer_port_int = atoi(peer_port);
     peer_address.sin_port = htons(peer_port_int);
-    local_address.sin_port = htons(peer_port_int);
 
     if (inet_pton(AF_INET, peer_ip, &(peer_address.sin_addr)) <= 0)
     {
@@ -65,16 +66,24 @@ void client_init(void)
         exit(EINVAL);
     }
 
-    udp_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    udp_tx_socket = socket(AF_INET, SOCK_DGRAM, 0);
 
-    if (udp_socket < 0)
+    if (udp_tx_socket < 0)
+    {
+        perror("Error in socket creation");
+        exit(EINVAL);
+    }
+
+    udp_rx_socket = socket(AF_INET, SOCK_DGRAM, 0);
+
+    if (udp_rx_socket < 0)
     {
         perror("Error in socket creation");
         exit(EINVAL);
     }
 
     //bind the socket to the address/port
-    if (bind(udp_socket, (struct sockaddr *)&local_address, sizeof(local_address)) < 0)
+    if (bind(udp_rx_socket, (struct sockaddr *)&local_address, sizeof(local_address)) < 0)
     {
         perror("Could not bind socket");
         exit(EXIT_FAILURE);
@@ -90,7 +99,6 @@ void client_init(void)
     }
 
     printf("\nSelected name: %s.\n", client_name);
-
 }
 
 void client_loop(void)
@@ -121,22 +129,23 @@ void client_loop(void)
         {
             fgets(outgoing_message.body, msg_buff_length, stdin);
             outgoing_message.body[strcspn(outgoing_message.body, "\n")] = 0;
-            msg_length = strlen(outgoing_message.body) + 4;
             outgoing_message.header = MESSAGE_TEXT;
         }
         else
         {
-            sprintf(outgoing_message.body, "%d:%s", local_address.sin_port, client_name);
-            msg_length = ADDRESS_BUFF_LENGTH + strlen(client_name) + 4;
+            sprintf(outgoing_message.body, "%u:%s", local_address.sin_port, client_name);
             outgoing_message.header = MESSAGE_JOIN;
         }
 
+        msg_length = strlen(outgoing_message.body) + 4;
+
         if (msg_length <= 4) break;
 
-        if (0 > sendto(udp_socket, &outgoing_message, msg_length + 1, 0,
+        if (0 > sendto(udp_rx_socket, &outgoing_message, msg_length, 0,
         (struct sockaddr *)&peer_address, sizeof(peer_address)))
         {
-            close(udp_socket);
+            close(udp_tx_socket);
+            close(udp_rx_socket);
             perror("Failed to send message");
             exit(EXIT_FAILURE);
         }
@@ -146,19 +155,21 @@ void client_loop(void)
             printf("Message: ");
             fflush(stdout);
         }
-
-        //printf("Sent message: %s\nTo %s:%d\nMessage:", msg_buffer, peer_ip, peer_port_int);
     }
 
     // send "leaving" message
     memset(&outgoing_message, 0, sizeof(outgoing_message));
-    strcpy(outgoing_message.body, client_name);
-    msg_length = strlen(client_name) + 4;
+    sprintf(outgoing_message.body, "%s", client_name);
+    msg_length = strlen(outgoing_message.body) + 4;
     outgoing_message.header = MESSAGE_QUIT;
-    sendto(udp_socket, &outgoing_message, msg_length + 1, 0,
+
+    pthread_cancel(rx_thread);
+
+    sendto(udp_tx_socket, &outgoing_message, msg_length, 0,
     (struct sockaddr *)&peer_address, sizeof(peer_address));
 
-    close(udp_socket);
+    close(udp_tx_socket);
+    close(udp_rx_socket);
     printf("Goodbye!\n");
     exit(EXIT_SUCCESS);
 }
