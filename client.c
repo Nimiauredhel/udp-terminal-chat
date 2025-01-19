@@ -5,9 +5,9 @@
 
 static int udp_tx_socket;
 static int udp_rx_socket;
-static int peer_port_int;
+
 static char peer_ip[ADDRESS_BUFF_LENGTH];
-static char peer_port[ADDRESS_BUFF_LENGTH];
+
 static char client_name[ADDRESS_BUFF_LENGTH];
 static Message_t outgoing_message;
 static char incoming_buffer[ADDRESS_BUFF_LENGTH + MSG_BUFF_LENGTH + 4];
@@ -38,9 +38,11 @@ static void* client_listen(void *arg)
 
 void client_init(void)
 {
-    printf("Client Init.\n");
+    char peer_port[ADDRESS_BUFF_LENGTH];
+    int peer_port_int;
 
-    printf("Peer IP: ");
+    printf("Client mode initializing.\nInput server IP: ");
+
     fgets(peer_ip, address_buff_length, stdin);
     peer_ip[strcspn(peer_ip, "\n")] = 0;
 
@@ -49,14 +51,15 @@ void client_init(void)
         sprintf(peer_ip, "%s", "127.0.0.1");
     }
 
-    printf("Peer port: ");
+    printf("Input server port: ");
+
     fgets(peer_port, address_buff_length, stdin);
     peer_port[strcspn(peer_port, "\n")] = 0;
     peer_port_int = atoi(peer_port);
 
     if (peer_port_int <= 1024)
     {
-        sprintf(peer_port, "%s", "8080");
+        printf("Defaulting to port 8080.\n");
         peer_port_int = 8080;
     }
 
