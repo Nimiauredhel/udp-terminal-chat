@@ -2,9 +2,6 @@
 #include "string.h"
 
 static int udp_rx_socket;
-static int rx_port_int;
-static char rx_port[ADDRESS_BUFF_LENGTH];
-
 static int udp_tx_socket;
 
 static ClientsData_t clients = {0};
@@ -70,7 +67,7 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
             clients.addresses[index].sin_port = htons(port_int);
 
             sprintf(clients.names[index], "%s", name);
-            printf("%s (%s:%u) has joined the conversation.\n", clients.names[index], inet_ntoa(address->sin_addr), address->sin_port);
+            printf("%s (%s:%u) has joined the conversation.\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), clients.addresses[index].sin_port);
         }
     }
     // existing client, reset timeout
@@ -127,7 +124,7 @@ void forward_message_to_clients(int8_t sender_index, char *message)
             exit(EXIT_FAILURE);
         }
 
-        printf("Forwarded message to %s (%s:%d).\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), clients.addresses[index].sin_port);
+        printf("Forwarded message to %s (%s:%u).\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), clients.addresses[index].sin_port);
     }
 
     printf("Done forwarding messages.\n");
@@ -135,6 +132,9 @@ void forward_message_to_clients(int8_t sender_index, char *message)
 
 void server_init(void)
 {
+    int rx_port_int;
+    char rx_port[ADDRESS_BUFF_LENGTH];
+
     printf("Server mode initializing.\n");
 
     printf("Input Rx port (leave blank for 8080): ");
@@ -143,10 +143,13 @@ void server_init(void)
 
     if (strlen(rx_port) < 1)
     {
-        strcpy(rx_port, "8080");
+        rx_port_int = 8080;
+    }
+    else
+    {
+        rx_port_int = atoi(rx_port);
     }
 
-    rx_port_int = atoi(rx_port);
     local_address.sin_port = htons(rx_port_int);
 
     if ((udp_rx_socket = socket(AF_INET, SOCK_DGRAM, 0)) <= 0)
@@ -161,12 +164,12 @@ void server_init(void)
         exit(EXIT_FAILURE);
     }
 
-    //bind the socket to the address/port
+    //bind the rx socket to the local address/port
     int result = bind(udp_rx_socket, (struct sockaddr *)&local_address, sizeof(local_address));
 
     if (result < 0)
     {
-        perror("Could not bind socket");
+        perror("Could not bind rx socket");
         exit(EXIT_FAILURE);
     }
 }
