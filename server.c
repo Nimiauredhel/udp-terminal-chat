@@ -1,9 +1,9 @@
 #define _GNU_SOURCE
 #include "server.h"
 
-static const char *msg_format_text = "%s (%s:%u):\n  %s";
-static const char *msg_format_join = "%s (%s:%u) has joined the conversation.";
-static const char *msg_format_quit = "%s (%s:%u) has left the conversation.";
+static const char *msg_format_text = "[%s] %s (%s:%u):\n ~ %s";
+static const char *msg_format_join = "[%s] %s (%s:%u) has joined the conversation.";
+static const char *msg_format_quit = "[%s] %s (%s:%u) has left the conversation.";
 
 static int udp_rx_socket;
 static int udp_tx_socket;
@@ -11,6 +11,20 @@ static int udp_tx_socket;
 static ClientsData_t clients = {0};
 
 static struct sockaddr_in local_address = { .sin_family = AF_INET, .sin_addr.s_addr = INADDR_ANY };
+
+void get_current_timedate_string(char *buff)
+{
+    time_t now = time(NULL);
+    struct tm *now_structured_ptr = localtime(&now);
+
+    sprintf(buff, "%02d:%02d:%02d %02d/%02d/%d",
+            now_structured_ptr->tm_hour,
+            now_structured_ptr->tm_min,
+            now_structured_ptr->tm_sec,
+            now_structured_ptr->tm_mday,
+            now_structured_ptr->tm_mon + 1,
+            now_structured_ptr->tm_year + 1900);
+}
 
 static int8_t get_free_client_index(void)
 {
@@ -39,13 +53,16 @@ static int8_t get_matching_client_index(struct sockaddr_in *address)
 
 void forward_message_to_clients(int8_t subject_client_index, char *message, const char *format, bool to_subject, bool local_print)
 {
+    char timestamp[32];
     char full_message[MSG_BUFF_LENGTH];
     size_t message_length;
     socklen_t peer_address_length;
 
+    get_current_timedate_string(timestamp);
+
     if (message != NULL && format != NULL)
     {
-        sprintf(full_message, format,
+        sprintf(full_message, format, timestamp,
                 subject_client_index == -1 ? "?" : clients.names[subject_client_index],
                 inet_ntoa(clients.addresses[subject_client_index].sin_addr),
                 ntohs(clients.addresses[subject_client_index].sin_port),
@@ -53,14 +70,14 @@ void forward_message_to_clients(int8_t subject_client_index, char *message, cons
     }
     else if (format != NULL)
     {
-        sprintf(full_message, format,
+        sprintf(full_message, format, timestamp,
                 subject_client_index == -1 ? "?" : clients.names[subject_client_index],
                 inet_ntoa(clients.addresses[subject_client_index].sin_addr),
                 ntohs(clients.addresses[subject_client_index].sin_port));
     }
     else if (message != NULL)
     {
-        sprintf(full_message, "%s", message);
+        sprintf(full_message, "%s ~ %s", timestamp, message);
     }
     else
     {
@@ -114,26 +131,29 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
         // found room, add client to list
         else
         {
-            char client_list[MSG_BUFF_LENGTH] = {0};
+            char welcome_message[MSG_BUFF_LENGTH] = {0};
+            char temp_buff[64];
             char port[ADDRESS_BUFF_LENGTH];
             char name[ADDRESS_BUFF_LENGTH];
             char *token;
             char *search = ":";
             uint16_t port_int;
 
-            strcat(client_list, "Welcome! Currently here:\n");
+            sprintf(welcome_message, "Welcome! There are currently %d participants.\n", clients.count);
 
-            for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
+            if (clients.count > 0)
             {
-                if (clients.connected[i])
+                for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
                 {
-                    strcat(client_list, "  ");
-                    strcat(client_list, clients.names[i]);
-                    strcat(client_list, "\n");
+                    if (clients.connected[i])
+                    {
+                        sprintf(temp_buff, "  %s\n", clients.names[i]);
+                        strcat(welcome_message, temp_buff);
+                    }
                 }
             }
 
-            strcat(client_list, "--------\n");
+            strcat(welcome_message, "--------\n");
 
             clients.addresses[index] = *address;
             clients.connected[index] = true;
@@ -144,11 +164,11 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
             token = strtok(NULL, search);
             sprintf(name, "%s", token);
 
-            // no htons here - the representation is of network order
             clients.addresses[index].sin_port = port_int;
             sprintf(clients.names[index], "%s", name);
+            clients.count++;
 
-            forward_message_to_clients(index, client_list, NULL, true, false);
+            forward_message_to_clients(index, welcome_message, NULL, true, false);
             forward_message_to_clients(index, NULL, msg_format_join, false, true);
         }
     }
@@ -166,6 +186,7 @@ void handle_client_quit(struct sockaddr_in *address)
     if (index != -1)
     {
         clients.connected[index] = false;
+        clients.count--;
         forward_message_to_clients(index, NULL, msg_format_quit, false, true);
     }
 }
