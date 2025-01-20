@@ -174,8 +174,6 @@ void client_loop(void)
     msg_length = strlen(outgoing_message.body);
     outgoing_message.header = MESSAGE_QUIT;
 
-    pthread_cancel(rx_thread);
-
     sendto(udp_socket, &outgoing_message, msg_length + 1, 0,
     (struct sockaddr *)&server_address, sizeof(server_address));
 
