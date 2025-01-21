@@ -22,8 +22,7 @@ int main(int argc, char *argv[])
             printf("Terminating.\n");
             return EINVAL;
         case 0:
-            server_init();
-            server_loop();
+            server_start();
             break;
         case 1:
             client_start();

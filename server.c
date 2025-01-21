@@ -5,17 +5,26 @@ static const char *msg_format_text = "[%s] %s (%s:%u):\n ~ %s";
 static const char *msg_format_join = "[%s] %s (%s:%u) has joined the conversation.";
 static const char *msg_format_quit = "[%s] %s (%s:%u) has left the conversation.";
 
-static int udp_rx_socket;
-static int udp_tx_socket;
-
-static ServerSideClientsData_t clients = {0};
-
-static struct sockaddr_in local_address = { .sin_family = AF_INET, .sin_addr.s_addr = INADDR_ANY };
-
-void get_current_timedate_string(char *buff)
+static void server_error_negative(int test_value, int exit_value, char *context_message, ServerSideData_t *data)
 {
-    time_t now = time(NULL);
-    struct tm *now_structured_ptr = localtime(&now);
+    if (test_value < 0)
+    {
+        perror(context_message);
+        close(data->udp_rx_socket);
+        close(data->udp_tx_socket);
+        free(data);
+        exit(exit_value);
+    }
+}
+
+static void server_error_zero(int test_value, int exit_value, char *context_message, ServerSideData_t *data)
+{
+    server_error_negative(test_value - 1, exit_value, context_message, data);
+}
+
+void timedate_to_string(time_t timedate, char *buff)
+{
+    struct tm *now_structured_ptr = localtime(&timedate);
 
     sprintf(buff, "%02d:%02d:%02d %02d/%02d/%d",
             now_structured_ptr->tm_hour,
@@ -26,23 +35,23 @@ void get_current_timedate_string(char *buff)
             now_structured_ptr->tm_year + 1900);
 }
 
-static int8_t get_free_client_index(void)
+static int8_t get_free_client_index(ServerSideData_t *data)
 {
     for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
     {
-        if (!clients.connected[i]) return i;
+        if (!data->clients_connected[i]) return i;
     }
 
     return -1;
 }
 
-static int8_t get_matching_client_index(struct sockaddr_in *address)
+static int8_t get_matching_client_index(ServerSideData_t* data, struct sockaddr_in *address)
 {
     for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
     {
-        if (clients.connected[i]
-            && clients.addresses[i].sin_addr.s_addr == address->sin_addr.s_addr
-            && clients.addresses[i].sin_port == address->sin_port)
+        if (data->clients_connected[i]
+            && data->clients_addresses[i].sin_addr.s_addr == address->sin_addr.s_addr
+            && data->clients_addresses[i].sin_port == address->sin_port)
         {
             return i;
         }
@@ -51,29 +60,29 @@ static int8_t get_matching_client_index(struct sockaddr_in *address)
     return -1;
 }
 
-void forward_message_to_clients(int8_t subject_client_index, char *message, const char *format, bool to_subject, bool local_print)
+void forward_message_to_clients(ServerSideData_t *data, int8_t subject_client_index, char *message, const char *format, bool to_subject, bool local_print)
 {
     char timestamp[32];
     char full_message[MSG_BUFF_LENGTH];
     size_t message_length;
     socklen_t peer_address_length;
 
-    get_current_timedate_string(timestamp);
+    timedate_to_string(time(NULL), timestamp);
 
     if (message != NULL && format != NULL)
     {
         sprintf(full_message, format, timestamp,
-                subject_client_index == -1 ? "?" : clients.names[subject_client_index],
-                inet_ntoa(clients.addresses[subject_client_index].sin_addr),
-                ntohs(clients.addresses[subject_client_index].sin_port),
+                subject_client_index == -1 ? "?" : data->clients_names[subject_client_index],
+                inet_ntoa(data->clients_addresses[subject_client_index].sin_addr),
+                ntohs(data->clients_addresses[subject_client_index].sin_port),
                 message);
     }
     else if (format != NULL)
     {
         sprintf(full_message, format, timestamp,
-                subject_client_index == -1 ? "?" : clients.names[subject_client_index],
-                inet_ntoa(clients.addresses[subject_client_index].sin_addr),
-                ntohs(clients.addresses[subject_client_index].sin_port));
+                subject_client_index == -1 ? "?" : data->clients_names[subject_client_index],
+                inet_ntoa(data->clients_addresses[subject_client_index].sin_addr),
+                ntohs(data->clients_addresses[subject_client_index].sin_port));
     }
     else if (message != NULL)
     {
@@ -89,20 +98,20 @@ void forward_message_to_clients(int8_t subject_client_index, char *message, cons
 
     for (int8_t index = 0; index < MAX_CLIENT_COUNT; index++)
     {
-        if (!clients.connected[index]
+        if (!data->clients_connected[index]
             || (to_subject && index != subject_client_index)
             || (!to_subject && index == subject_client_index))
             continue;
 
-        peer_address_length = sizeof(clients.addresses[index]);
+        peer_address_length = sizeof(data->clients_addresses[index]);
 
-        if (0 > sendto(udp_tx_socket, full_message, message_length, 0,
-        (struct sockaddr *)&clients.addresses[index],
+        if (0 > sendto(data->udp_tx_socket, full_message, message_length, 0,
+        (struct sockaddr *)&(data->clients_addresses[index]),
         peer_address_length))
         {
             printf("Failed to forward message to %s:%u",
-                    inet_ntoa(clients.addresses[index].sin_addr),
-                    ntohs(clients.addresses[index].sin_port)); 
+                    inet_ntoa(data->clients_addresses[index].sin_addr),
+                    ntohs(data->clients_addresses[index].sin_port)); 
         }
 
         //printf("Forwarded message to %s (%s:%u).\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port));
@@ -114,14 +123,14 @@ void forward_message_to_clients(int8_t subject_client_index, char *message, cons
     }
 }
 
-static void handle_client_join(char *join_message, struct sockaddr_in *address)
+static void handle_client_join(ServerSideData_t *data, char *join_message, struct sockaddr_in *address)
 {
-    int8_t index = get_matching_client_index(address);
+    int8_t index = get_matching_client_index(data, address);
 
     // new client, add to list if has room
     if (index == -1)
     {
-        index = get_free_client_index();
+        index = get_free_client_index(data);
 
         // no room, too bad
         // TODO: handle client rejection
@@ -139,15 +148,15 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
             char *search = ":";
             uint16_t port_int;
 
-            sprintf(welcome_message, "Welcome! There are currently %d participants.\n", clients.count);
+            sprintf(welcome_message, "Welcome! There are currently %d participants.\n", data->clients_count);
 
-            if (clients.count > 0)
+            if (data->clients_count > 0)
             {
                 for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
                 {
-                    if (clients.connected[i])
+                    if (data->clients_connected[i])
                     {
-                        sprintf(temp_buff, "  %s\n", clients.names[i]);
+                        sprintf(temp_buff, "  %s\n", data->clients_names[i]);
                         strcat(welcome_message, temp_buff);
                     }
                 }
@@ -155,8 +164,8 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
 
             strcat(welcome_message, "--------\n");
 
-            clients.addresses[index] = *address;
-            clients.connected[index] = true;
+            data->clients_addresses[index] = *address;
+            data->clients_connected[index] = true;
 
             token = strtok(join_message, search);
             sprintf(port, "%s", token);
@@ -164,12 +173,12 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
             token = strtok(NULL, search);
             sprintf(name, "%s", token);
 
-            clients.addresses[index].sin_port = port_int;
-            sprintf(clients.names[index], "%s", name);
-            clients.count++;
+            data->clients_addresses[index].sin_port = port_int;
+            sprintf(data->clients_names[index], "%s", name);
+            data->clients_count++;
 
-            forward_message_to_clients(index, welcome_message, NULL, true, false);
-            forward_message_to_clients(index, NULL, msg_format_join, false, true);
+            forward_message_to_clients(data, index, welcome_message, NULL, true, false);
+            forward_message_to_clients(data, index, NULL, msg_format_join, false, true);
         }
     }
     // existing client, reset timeout
@@ -179,26 +188,28 @@ static void handle_client_join(char *join_message, struct sockaddr_in *address)
     }
 }
 
-void handle_client_quit(struct sockaddr_in *address)
+static void handle_client_quit(ServerSideData_t *data, struct sockaddr_in *address)
 {
-    int8_t index = get_matching_client_index(address);
+    int8_t index = get_matching_client_index(data, address);
     
     if (index != -1)
     {
-        clients.connected[index] = false;
-        clients.count--;
-        forward_message_to_clients(index, NULL, msg_format_quit, false, true);
+        data->clients_connected[index] = false;
+        data->clients_count--;
+        forward_message_to_clients(data, index, NULL, msg_format_quit, false, true);
     }
 }
 
-void server_init(void)
+static void server_init(ServerSideData_t *data)
 {
     int rx_port_int;
     char rx_port[PORT_BUFF_LENGTH];
 
-    printf("Server mode initializing.\n");
+    data->local_address.sin_family = AF_INET;
+    data->local_address.sin_addr.s_addr = INADDR_ANY;
 
-    printf("Input Rx port (leave blank for 8080): ");
+    printf("Server mode initializing.\nInput Rx port (leave blank for 8080): ");
+
     fgets(rx_port, PORT_BUFF_LENGTH, stdin);
     rx_port[strcspn(rx_port, "\n")] = 0;
 
@@ -211,36 +222,20 @@ void server_init(void)
         rx_port_int = atoi(rx_port);
     }
 
-    local_address.sin_port = htons(rx_port_int);
+    data->local_address.sin_port = htons(rx_port_int);
 
-    if ((udp_rx_socket = socket(AF_INET, SOCK_DGRAM, 0)) <= 0)
-    {
-        perror("Failed to create rx socket");
-        exit(EXIT_FAILURE);
-    }
+    data->udp_rx_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    data->udp_tx_socket = socket(AF_INET, SOCK_DGRAM, 0);
 
-    if ((udp_tx_socket = socket(AF_INET, SOCK_DGRAM, 0)) <= 0)
-    {
-        perror("Failed to create tx socket");
-        exit(EXIT_FAILURE);
-    }
+    server_error_zero(data->udp_rx_socket, EXIT_FAILURE, "Failed to create rx socket", data);
+    server_error_zero(data->udp_tx_socket, EXIT_FAILURE, "Failed to create tx socket", data);
 
     //bind the rx socket to the local address/port
-    int result = bind(udp_rx_socket, (struct sockaddr *)&local_address, sizeof(local_address));
-
-    if (result < 0)
-    {
-        perror("Could not bind rx socket");
-        exit(EXIT_FAILURE);
-    }
+    server_error_negative(bind(data->udp_rx_socket, (struct sockaddr *)&(data->local_address), sizeof(data->local_address)), EXIT_FAILURE, "Could not bind rx socket", data);
 
     struct ifaddrs *addresses_head;
 
-    if (getifaddrs(&addresses_head) < 0)
-    {
-        perror("Could not acquire addresses list.");
-        exit(EXIT_FAILURE);
-    }
+    server_error_negative(getifaddrs(&addresses_head), EXIT_FAILURE, "Could not acquire addresses list", data);
 
     printf("Server initialization complete.\nAddresses:\n");
 
@@ -252,13 +247,9 @@ void server_init(void)
         if (addresses_current->ifa_addr != NULL
             && addresses_current->ifa_addr->sa_family == AF_INET)
         {
-            if(getnameinfo(addresses_current->ifa_addr, sizeof(struct sockaddr_in),
-                host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST) < 0)
-            {
-                perror("getnameinfo failed");
-                exit(EXIT_FAILURE);
-            }
-
+            server_error_negative(
+                getnameinfo(addresses_current->ifa_addr, sizeof(struct sockaddr_in), host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST),
+                EXIT_FAILURE, "getnameinfo failed", data);
             printf("    %s\n", host);
         }
 
@@ -268,7 +259,7 @@ void server_init(void)
     freeifaddrs(addresses_head);
 }
 
-void server_loop(void)
+static void server_loop(ServerSideData_t *data)
 {
     printf ("Server online.\n");
 
@@ -282,15 +273,9 @@ void server_loop(void)
     while(true)
     {
         memset(incoming_message, 0, msg_alloc_size);
-        ssize_t bytes_received = recvfrom(udp_rx_socket, incoming_message, msg_alloc_size, 0, (struct sockaddr*)&client_address, &client_address_length);
+        ssize_t bytes_received = recvfrom(data->udp_rx_socket, incoming_message, msg_alloc_size, 0, (struct sockaddr*)&client_address, &client_address_length);
 
-        if (bytes_received <= 0)
-        {
-            close(udp_rx_socket);
-            close(udp_tx_socket);
-            perror("Failed to receive bytes");
-            exit(EXIT_FAILURE);
-        }
+        server_error_zero(bytes_received, EXIT_FAILURE, "Failed to receive bytes", data);
 
         switch (ntohs(incoming_message->header.message_type))
         {
@@ -298,21 +283,29 @@ void server_loop(void)
                 printf("Received a packet from %s:%d -- Message: %s\n", inet_ntoa(client_address.sin_addr), ntohs(client_address.sin_port), incoming_message->body);
                 break;
             case MESSAGE_JOIN:
-                handle_client_join(incoming_message->body, &client_address);
+                handle_client_join(data, incoming_message->body, &client_address);
                 break;
             case MESSAGE_QUIT:
-                handle_client_quit(&client_address);
+                handle_client_quit(data, &client_address);
                 break;
             case MESSAGE_CHAT:
-                client_index = get_matching_client_index(&client_address);
-                forward_message_to_clients(client_index, incoming_message->body, msg_format_text, false, true);
+                client_index = get_matching_client_index(data, &client_address);
+                forward_message_to_clients(data, client_index, incoming_message->body, msg_format_text, false, true);
                 break;
         }
     }
 
     printf("Terminating.\n");
 
-    close(udp_rx_socket);
-    close(udp_tx_socket);
+    close(data->udp_rx_socket);
+    close(data->udp_tx_socket);
+    free(data);
     exit(EXIT_SUCCESS);
+}
+
+void server_start(void)
+{
+    ServerSideData_t *server_side_data = malloc(sizeof(ServerSideData_t));
+    server_init(server_side_data);
+    server_loop(server_side_data);
 }
