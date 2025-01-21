@@ -18,12 +18,15 @@ typedef enum MessageHeader
     MESSAGE_TEXT = 3,
 } MessageHeader_t;
 
-#pragma pack(2)
+#pragma pack(push, 2)
+
 typedef struct Message
 {
     MessageHeader_t header;
     char body[MSG_BUFF_LENGTH];
 } Message_t;
+
+#pragma pack(pop)
 
 extern const uint16_t address_buff_length;
 extern const uint16_t msg_buff_length;
