@@ -26,8 +26,7 @@ int main(int argc, char *argv[])
             server_loop();
             break;
         case 1:
-            client_init();
-            client_loop();
+            client_start();
     }
 
     return EXIT_SUCCESS;

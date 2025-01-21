@@ -6,13 +6,13 @@
 
 #define MAX_CLIENT_COUNT 16
 
-typedef struct ClientsData
+typedef struct ServerSideClientsData
 {
     uint8_t count;
     bool connected[MAX_CLIENT_COUNT];
     struct sockaddr_in addresses[MAX_CLIENT_COUNT];
     char names[MAX_CLIENT_COUNT][ADDRESS_BUFF_LENGTH];
-} ClientsData_t;
+} ServerSideClientsData_t;
 
 void server_init(void);
 void server_loop(void);

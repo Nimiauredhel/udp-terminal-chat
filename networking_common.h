@@ -7,28 +7,41 @@
 #include <netdb.h>
 #include <ifaddrs.h>
 
-#define ADDRESS_BUFF_LENGTH 16
-#define MSG_BUFF_LENGTH 511
+#define ENCODING_VERSION 0
 
-typedef enum MessageHeader
+#define PORT_BUFF_LENGTH 8
+#define ADDRESS_BUFF_LENGTH 40
+#define NAME_BUFF_LENGTH 32
+#define MSG_BUFF_LENGTH 512
+#define MSG_ALLOC_SIZE (sizeof(Message_t) + MSG_BUFF_LENGTH)
+
+typedef enum MessageType
 {
+    MESSAGE_ERROR = -1,
     MESSAGE_UNDEFINED = 0,
     MESSAGE_JOIN = 1,
     MESSAGE_QUIT = 2,
-    MESSAGE_TEXT = 3,
-} MessageHeader_t;
+    MESSAGE_CHAT = 3,
+    MESSAGE_RAW = 4,
+    MESSAGE_STAY = 5,
+} MessageType_t;
 
 #pragma pack(push, 2)
+
+typedef struct MessageHeader
+{
+    uint16_t encoding_version;
+    uint16_t body_length;
+    int64_t timestamp;
+    MessageType_t message_type;
+} MessageHeader_t;
 
 typedef struct Message
 {
     MessageHeader_t header;
-    char body[MSG_BUFF_LENGTH];
+    char body[];
 } Message_t;
 
 #pragma pack(pop)
-
-extern const uint16_t address_buff_length;
-extern const uint16_t msg_buff_length;
 
 #endif
