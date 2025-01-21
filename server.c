@@ -292,7 +292,7 @@ void server_loop(void)
             exit(EXIT_FAILURE);
         }
 
-        switch (incoming_message->header.message_type)
+        switch (ntohs(incoming_message->header.message_type))
         {
             case MESSAGE_UNDEFINED:
                 printf("Received a packet from %s:%d -- Message: %s\n", inet_ntoa(client_address.sin_addr), ntohs(client_address.sin_port), incoming_message->body);

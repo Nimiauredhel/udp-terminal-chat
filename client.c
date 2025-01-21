@@ -139,6 +139,7 @@ static void client_tx_loop(ClientSideData_t *data)
     uint16_t msg_body_length;
 
     Message_t *outgoing_message = malloc(MSG_ALLOC_SIZE);
+    outgoing_message->header.encoding_version = htons(ENCODING_VERSION);
 
     printf("Message: ");
     fflush(stdout);
@@ -151,7 +152,7 @@ static void client_tx_loop(ClientSideData_t *data)
         FD_ZERO(&input_set);
         FD_SET(STDIN_FILENO, &input_set);
 
-        memset(outgoing_message, 0, MSG_ALLOC_SIZE);
+        memset(outgoing_message->body, 0, MSG_BUFF_LENGTH);
 
         has_input = select(1, &input_set, NULL, NULL, &timeout);
 
@@ -159,21 +160,20 @@ static void client_tx_loop(ClientSideData_t *data)
         {
             fgets(outgoing_message->body, MSG_BUFF_LENGTH, stdin);
             outgoing_message->body[strcspn(outgoing_message->body, "\n")] = 0;
-            outgoing_message->header.message_type = MESSAGE_CHAT;
+            outgoing_message->header.message_type = htons(MESSAGE_CHAT);
         }
         else
         {
             sprintf(outgoing_message->body, "%u:%s", data->local_address.sin_port, data->client_name);
-            outgoing_message->header.message_type = MESSAGE_JOIN;
+            outgoing_message->header.message_type = htons(MESSAGE_JOIN);
         }
 
         msg_body_length = strlen(outgoing_message->body);
 
         if (msg_body_length <= 0) break;
 
-        outgoing_message->header.encoding_version = ENCODING_VERSION;
-        outgoing_message->header.body_length = msg_body_length;
-        outgoing_message->header.timestamp = time(NULL);
+        outgoing_message->header.body_length = htons(msg_body_length);
+        outgoing_message->header.timestamp = htons(time(NULL));
 
         client_error_negative(sendto(data->udp_socket, outgoing_message, sizeof(Message_t) + msg_body_length + 1, 0,
         (struct sockaddr *)&(data->server_address), sizeof(data->server_address)), EXIT_FAILURE, "Failed to send message", data);
@@ -193,14 +193,13 @@ static void client_tx_loop(ClientSideData_t *data)
     pthread_join(data->rx_thread, NULL);
 
     // send "leaving" message
-    memset(outgoing_message, 0, MSG_ALLOC_SIZE);
+    memset(outgoing_message->body, 0, MSG_BUFF_LENGTH);
     strncpy(outgoing_message->body, data->client_name, NAME_BUFF_LENGTH);
     msg_body_length = strlen(outgoing_message->body);
 
-    outgoing_message->header.encoding_version = ENCODING_VERSION;
-    outgoing_message->header.body_length = msg_body_length;
-    outgoing_message->header.timestamp = time(NULL);
-    outgoing_message->header.message_type = MESSAGE_QUIT;
+    outgoing_message->header.body_length = htons(msg_body_length);
+    outgoing_message->header.timestamp = htons(time(NULL));
+    outgoing_message->header.message_type = htons(MESSAGE_QUIT);
 
     sendto(data->udp_socket, outgoing_message, sizeof(Message_t) + msg_body_length + 1, 0,
     (struct sockaddr *)&(data->server_address), sizeof(data->server_address));
