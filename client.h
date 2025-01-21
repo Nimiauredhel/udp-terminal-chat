@@ -7,6 +7,7 @@
 typedef struct ClientSideData
 {
     int udp_socket;
+    pthread_t rx_thread;
     struct sockaddr_in server_address;
     struct sockaddr_in local_address;
     char client_name[NAME_BUFF_LENGTH];

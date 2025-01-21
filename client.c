@@ -1,4 +1,5 @@
 #include "client.h"
+#include <bits/pthread_stack_min.h>
 
 static void client_error_negative(int test_value, int exit_value, char *context_message, ClientSideData_t *data)
 {
@@ -47,6 +48,14 @@ static void* client_listen(void *arg)
     }
 
     return NULL;
+}
+
+void client_create_rx_thread(ClientSideData_t *data)
+{
+    pthread_attr_t rx_thread_attributes;
+    pthread_attr_init(&rx_thread_attributes);
+    pthread_attr_setstacksize(&rx_thread_attributes, PTHREAD_STACK_MIN);
+    pthread_create(&(data->rx_thread), &rx_thread_attributes, &client_listen, data);
 }
 
 static void client_init(ClientSideData_t *data)
@@ -122,7 +131,7 @@ static void client_init(ClientSideData_t *data)
             ntohs(data->server_address.sin_port));
 }
 
-static void client_loop(ClientSideData_t *data)
+static void client_tx_loop(ClientSideData_t *data)
 {
     fd_set input_set;
     int has_input;
@@ -134,8 +143,6 @@ static void client_loop(ClientSideData_t *data)
     printf("Message: ");
     fflush(stdout);
 
-    pthread_t rx_thread;
-    pthread_create(&rx_thread, NULL, &client_listen, data);
 
     while(true)
     {
@@ -182,8 +189,8 @@ static void client_loop(ClientSideData_t *data)
     printf("Goodbye!\n");
 
     // terminate listen thread
-    pthread_cancel(rx_thread);
-    pthread_join(rx_thread, NULL);
+    pthread_cancel(data->rx_thread);
+    pthread_join(data->rx_thread, NULL);
 
     // send "leaving" message
     memset(outgoing_message, 0, MSG_ALLOC_SIZE);
@@ -208,6 +215,8 @@ static void client_loop(ClientSideData_t *data)
 void client_start(void)
 {
     ClientSideData_t *client_side_data = malloc(sizeof(ClientSideData_t));
+
     client_init(client_side_data);
-    client_loop(client_side_data);
+    client_create_rx_thread(client_side_data);
+    client_tx_loop(client_side_data);
 }
