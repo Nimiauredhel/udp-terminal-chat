@@ -21,6 +21,6 @@ typedef struct ServerSideData
     char clients_names[MAX_CLIENT_COUNT][ADDRESS_BUFF_LENGTH];
 } ServerSideData_t;
 
-void server_start(void);
+void server_start(void) __attribute__ ((__noreturn__));
 
 #endif

@@ -1,11 +1,8 @@
-#define _GNU_SOURCE
 #include "server.h"
 
 static const char *msg_format_text = "[%s] %s (%s:%u):\n ~ %s";
 static const char *msg_format_join = "[%s] %s (%s:%u) has joined the conversation.";
 static const char *msg_format_quit = "[%s] %s (%s:%u) has left the conversation.";
-
-static bool should_terminate = false;
 
 static void server_init(ServerSideData_t *data);
 static void server_create_monitor_thread(ServerSideData_t *data);
@@ -29,31 +26,10 @@ void server_start(void)
     server_loop(server_side_data);
 }
 
-static void server_signal_handler(int signum)
-{
-    switch (signum)
-    {
-        case SIGINT:
-        case SIGTERM:
-        case SIGHUP:
-            should_terminate = true;
-            break;
-    }
-}
-
 static void server_init(ServerSideData_t *data)
 {
     int rx_port_int;
     char rx_port[PORT_BUFF_LENGTH];
-
-    should_terminate = false;
-
-    struct sigaction action;
-    memset(&action, 0, sizeof(action));
-    action.sa_handler = server_signal_handler;
-    sigaction(SIGINT, &action, NULL);
-    sigaction(SIGTERM, &action, NULL);
-    sigaction(SIGHUP, &action, NULL);
 
     data->local_address.sin_family = AF_INET;
     data->local_address.sin_addr.s_addr = INADDR_ANY;
@@ -256,7 +232,6 @@ static void handle_client_join(ServerSideData_t *data, char *join_message, struc
         }
     }
     // existing client, reset timeout
-    // TODO: implement client timeout ...
     else
     {
         data->clients_timers[index] = CLIENT_TIMEOUT;

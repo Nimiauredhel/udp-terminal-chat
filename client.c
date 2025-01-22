@@ -72,6 +72,13 @@ static void client_init(ClientSideData_t *data)
     // if all 16384 ports fail, give up
     client_error_negative(bind_result, EXIT_FAILURE, "Could not bind socket", data);
 
+    // set the socket rx timeout
+    struct timeval socket_timeout;
+    socket_timeout.tv_sec = 0;
+    socket_timeout.tv_usec = 500000;
+    client_error_negative(setsockopt(data->udp_socket, SOL_SOCKET, SO_RCVTIMEO, &socket_timeout, sizeof(socket_timeout)),
+            EXIT_FAILURE, "Failed to set socket rx timeout", data);
+
     printf("Client will receive on port %d.\nInput client name: ", rx_port);
 
     fgets(data->client_name, NAME_BUFF_LENGTH, stdin);
@@ -111,10 +118,10 @@ static void client_tx_loop(ClientSideData_t *data)
     data->outgoing_message->header.message_type = htons(MESSAGE_JOIN);
     client_send_message(data);
 
-    printf("Message: ");
+    printf("Client initialized. Enter a message or Ctrl-C to quit.\nMessage: ");
     fflush(stdout);
 
-    while(true)
+    while(!should_terminate)
     {
         timeout.tv_sec = 0;
         timeout.tv_usec = 500000;
@@ -125,6 +132,8 @@ static void client_tx_loop(ClientSideData_t *data)
 
         // wait for user input until timeout
         has_input = select(1, &input_set, NULL, NULL, &timeout);
+
+        if (should_terminate) break;
 
         // if input detected, prepare to send it as a chat message
         if (has_input)
@@ -147,6 +156,8 @@ static void client_tx_loop(ClientSideData_t *data)
             fflush(stdout);
         }
     }
+
+    client_terminate(data, EXIT_SUCCESS);
 }
 
 static void* client_rx_loop(void *arg)
@@ -157,23 +168,21 @@ static void* client_rx_loop(void *arg)
     char incoming_buffer[sizeof(Message_t) + MSG_BUFF_LENGTH];
     socklen_t incoming_address_length = sizeof(incoming_address);
 
-    while (true)
+    while (!should_terminate)
     {
-        pthread_testcancel();
-
         memset(&incoming_buffer, 0, sizeof(incoming_buffer));
         int bytes_received = recvfrom(data->udp_socket, &incoming_buffer, sizeof(incoming_buffer), 0, (struct sockaddr*)&incoming_address, &incoming_address_length);
 
-        pthread_testcancel();
+        if (should_terminate) break;
 
-        if (incoming_address.sin_addr.s_addr != data->server_address.sin_addr.s_addr)
+        if ((incoming_address.sin_addr.s_addr != data->server_address.sin_addr.s_addr)
+            ||(bytes_received <= 0 && errno == EWOULDBLOCK))
             continue;
 
         client_error_zero(bytes_received, EXIT_FAILURE, "Failed to receive bytes", data);
 
+        if (should_terminate) break;
         if (strlen(incoming_buffer) < 2) continue;
-
-        pthread_testcancel();
 
         printf("\b\b\b\b\b\b\b\b\b%s\nMessage: ", incoming_buffer);
         fflush(stdout);
@@ -198,7 +207,9 @@ static void client_send_message(ClientSideData_t *data)
 
         if (msg_body_length <= 0)
         {
-            client_terminate(data, EXIT_SUCCESS);
+            // empty buffer, move the cursor a line up and do not send a message
+            printf( "\x1B[1F");
+            return;
         }
         else
         {
@@ -229,14 +240,15 @@ static void client_send_message(ClientSideData_t *data)
 
 static void client_terminate(ClientSideData_t *data, int exit_value)
 {
-    // terminate listen thread
-    pthread_cancel(data->rx_thread);
+    // settings the flag just in case,
+    // and waiting for the thread to exit
+    should_terminate = true;
     pthread_join(data->rx_thread, NULL);
 
     // print message if terminated by user
     if (exit_value == 0)
     {
-        printf("Goodbye!\n");
+        printf("Client terminated by user. Goodbye!\n");
     }
 
     // send a quit message

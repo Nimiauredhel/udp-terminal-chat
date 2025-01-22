@@ -14,6 +14,6 @@ typedef struct ClientSideData
     Message_t *outgoing_message;
 } ClientSideData_t;
 
-void client_start(void);
+void client_start(void) __attribute__ ((__noreturn__));
 
 #endif
