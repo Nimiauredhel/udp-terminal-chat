@@ -5,24 +5,28 @@ static const char *msg_format_text = "[%s] %s (%s:%u):\n ~ %s";
 static const char *msg_format_join = "[%s] %s (%s:%u) has joined the conversation.";
 static const char *msg_format_quit = "[%s] %s (%s:%u) has left the conversation.";
 
-static void server_error_negative(int test_value, int exit_value, char *context_message, ServerSideData_t *data)
+static void server_init(ServerSideData_t *data);
+static void server_create_monitor_thread(ServerSideData_t *data);
+static void *server_monitor_loop(void *arg);
+static void server_loop(ServerSideData_t *data);
+static void handle_client_join(ServerSideData_t *data, char *join_message, struct sockaddr_in *address, int8_t index);
+static void handle_client_quit(ServerSideData_t *data, int8_t index);
+static void forward_message_to_clients(ServerSideData_t *data, int8_t subject_client_index, char *message, const char *format, bool to_subject, bool local_print);
+static int8_t get_free_client_index(ServerSideData_t *data);
+static int8_t get_matching_client_index(ServerSideData_t* data, struct sockaddr_in *address);
+static void timedate_to_string(time_t timedate, char *buff);
+static void server_error_negative(int test_value, int exit_value, char *context_message, ServerSideData_t *data);
+static void server_error_zero(int test_value, int exit_value, char *context_message, ServerSideData_t *data);
+
+void server_start(void)
 {
-    if (test_value < 0)
-    {
-        perror(context_message);
-        close(data->udp_rx_socket);
-        close(data->udp_tx_socket);
-        free(data);
-        exit(exit_value);
-    }
+    ServerSideData_t *server_side_data = malloc(sizeof(ServerSideData_t));
+    server_init(server_side_data);
+    server_create_monitor_thread(server_side_data);
+    server_loop(server_side_data);
 }
 
-static void server_error_zero(int test_value, int exit_value, char *context_message, ServerSideData_t *data)
-{
-    server_error_negative(test_value - 1, exit_value, context_message, data);
-}
-
-void timedate_to_string(time_t timedate, char *buff)
+static void timedate_to_string(time_t timedate, char *buff)
 {
     struct tm *now_structured_ptr = localtime(&timedate);
 
@@ -60,7 +64,7 @@ static int8_t get_matching_client_index(ServerSideData_t* data, struct sockaddr_
     return -1;
 }
 
-void forward_message_to_clients(ServerSideData_t *data, int8_t subject_client_index, char *message, const char *format, bool to_subject, bool local_print)
+static void forward_message_to_clients(ServerSideData_t *data, int8_t subject_client_index, char *message, const char *format, bool to_subject, bool local_print)
 {
     char timestamp[32];
     char full_message[MSG_BUFF_LENGTH];
@@ -123,10 +127,8 @@ void forward_message_to_clients(ServerSideData_t *data, int8_t subject_client_in
     }
 }
 
-static void handle_client_join(ServerSideData_t *data, char *join_message, struct sockaddr_in *address)
+static void handle_client_join(ServerSideData_t *data, char *join_message, struct sockaddr_in *address, int8_t index)
 {
-    int8_t index = get_matching_client_index(data, address);
-
     // new client, add to list if has room
     if (index == -1)
     {
@@ -136,6 +138,7 @@ static void handle_client_join(ServerSideData_t *data, char *join_message, struc
         // TODO: handle client rejection
         if (index == -1)
         {
+            printf("Client rejected due to reaching max number of clients.\n");
         }
         // found room, add client to list
         else
@@ -166,6 +169,7 @@ static void handle_client_join(ServerSideData_t *data, char *join_message, struc
 
             data->clients_addresses[index] = *address;
             data->clients_connected[index] = true;
+            data->clients_timers[index] = CLIENT_TIMEOUT;
 
             token = strtok(join_message, search);
             sprintf(port, "%s", token);
@@ -185,13 +189,12 @@ static void handle_client_join(ServerSideData_t *data, char *join_message, struc
     // TODO: implement client timeout ...
     else
     {
+        data->clients_timers[index] = CLIENT_TIMEOUT;
     }
 }
 
-static void handle_client_quit(ServerSideData_t *data, struct sockaddr_in *address)
+static void handle_client_quit(ServerSideData_t *data, int8_t index)
 {
-    int8_t index = get_matching_client_index(data, address);
-    
     if (index != -1)
     {
         data->clients_connected[index] = false;
@@ -259,6 +262,41 @@ static void server_init(ServerSideData_t *data)
     freeifaddrs(addresses_head);
 }
 
+static void server_create_monitor_thread(ServerSideData_t *data)
+{
+    pthread_attr_t attributes;
+    pthread_attr_init(&attributes);
+    pthread_attr_setstacksize(&attributes, PTHREAD_STACK_MIN);
+    pthread_create(&(data->monitor_thread), &attributes, &server_monitor_loop, data);
+}
+
+static void *server_monitor_loop(void *arg)
+{
+    ServerSideData_t *data = (ServerSideData_t *)arg;
+
+    while (true)
+    {
+        sleep(1);
+
+        for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
+        {
+            if (data->clients_connected[i])
+            {
+                if (data->clients_timers[i] <= 0)
+                {
+                    handle_client_quit(data, i);
+                }
+                else
+                {
+                    data->clients_timers[i] -= 1;
+                }
+            }
+        }
+    }
+
+    return NULL;
+}
+
 static void server_loop(ServerSideData_t *data)
 {
     printf ("Server online and receiving on port %u.\n", ntohs(data->local_address.sin_port));
@@ -277,19 +315,21 @@ static void server_loop(ServerSideData_t *data)
 
         server_error_zero(bytes_received, EXIT_FAILURE, "Failed to receive bytes", data);
 
+        client_index = get_matching_client_index(data, &client_address);
+
         switch (ntohs(incoming_message->header.message_type))
         {
             case MESSAGE_UNDEFINED:
                 printf("Received a packet from %s:%d -- Message: %s\n", inet_ntoa(client_address.sin_addr), ntohs(client_address.sin_port), incoming_message->body);
                 break;
             case MESSAGE_JOIN:
-                handle_client_join(data, incoming_message->body, &client_address);
+            case MESSAGE_STAY:
+                handle_client_join(data, incoming_message->body, &client_address, client_index);
                 break;
             case MESSAGE_QUIT:
-                handle_client_quit(data, &client_address);
+                handle_client_quit(data, client_index);
                 break;
             case MESSAGE_CHAT:
-                client_index = get_matching_client_index(data, &client_address);
                 forward_message_to_clients(data, client_index, incoming_message->body, msg_format_text, false, true);
                 break;
         }
@@ -303,9 +343,20 @@ static void server_loop(ServerSideData_t *data)
     exit(EXIT_SUCCESS);
 }
 
-void server_start(void)
+static void server_error_negative(int test_value, int exit_value, char *context_message, ServerSideData_t *data)
 {
-    ServerSideData_t *server_side_data = malloc(sizeof(ServerSideData_t));
-    server_init(server_side_data);
-    server_loop(server_side_data);
+    if (test_value < 0)
+    {
+        perror(context_message);
+        close(data->udp_rx_socket);
+        close(data->udp_tx_socket);
+        free(data);
+        exit(exit_value);
+    }
 }
+
+static void server_error_zero(int test_value, int exit_value, char *context_message, ServerSideData_t *data)
+{
+    server_error_negative(test_value - 1, exit_value, context_message, data);
+}
+

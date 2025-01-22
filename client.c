@@ -1,5 +1,4 @@
 #include "client.h"
-#include <bits/pthread_stack_min.h>
 
 static void client_init(ClientSideData_t *data);
 static void client_create_rx_thread(ClientSideData_t *data);

@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <ifaddrs.h>
+#include <bits/pthread_stack_min.h>
 
 #define ENCODING_VERSION 0
 
