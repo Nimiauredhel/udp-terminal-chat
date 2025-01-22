@@ -173,7 +173,7 @@ static void handle_client_join(ServerSideData_t *data, char *join_message, struc
             token = strtok(NULL, search);
             sprintf(name, "%s", token);
 
-            data->clients_addresses[index].sin_port = port_int;
+            data->clients_addresses[index].sin_port = htons(port_int);
             sprintf(data->clients_names[index], "%s", name);
             data->clients_count++;
 
@@ -208,14 +208,14 @@ static void server_init(ServerSideData_t *data)
     data->local_address.sin_family = AF_INET;
     data->local_address.sin_addr.s_addr = INADDR_ANY;
 
-    printf("Server mode initializing.\nInput Rx port (leave blank for 8080): ");
+    printf("Server mode initializing.\nInput Rx port (leave blank for default): ");
 
     fgets(rx_port, PORT_BUFF_LENGTH, stdin);
     rx_port[strcspn(rx_port, "\n")] = 0;
 
-    if (strlen(rx_port) < 1)
+    if (strlen(rx_port) <= 1024)
     {
-        rx_port_int = 8080;
+        rx_port_int = PORT_MIN;
     }
     else
     {
@@ -261,7 +261,7 @@ static void server_init(ServerSideData_t *data)
 
 static void server_loop(ServerSideData_t *data)
 {
-    printf ("Server online.\n");
+    printf ("Server online and receiving on port %u.\n", ntohs(data->local_address.sin_port));
 
     static struct sockaddr_in client_address = { .sin_family = AF_INET };
     socklen_t client_address_length = sizeof(client_address);

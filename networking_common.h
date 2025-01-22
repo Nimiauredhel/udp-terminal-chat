@@ -15,15 +15,18 @@
 #define MSG_BUFF_LENGTH 512
 #define MSG_ALLOC_SIZE (sizeof(Message_t) + MSG_BUFF_LENGTH)
 
+#define PORT_MIN 49152
+#define PORT_MAX 65535
+
 typedef enum MessageType
 {
-    MESSAGE_ERROR = -1,
     MESSAGE_UNDEFINED = 0,
     MESSAGE_JOIN = 1,
     MESSAGE_QUIT = 2,
     MESSAGE_CHAT = 3,
     MESSAGE_RAW = 4,
     MESSAGE_STAY = 5,
+    MESSAGE_ERROR = 6,
 } MessageType_t;
 
 #pragma pack(push, 2)

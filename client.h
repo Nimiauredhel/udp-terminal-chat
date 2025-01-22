@@ -11,6 +11,7 @@ typedef struct ClientSideData
     struct sockaddr_in server_address;
     struct sockaddr_in local_address;
     char client_name[NAME_BUFF_LENGTH];
+    Message_t *outgoing_message;
 } ClientSideData_t;
 
 void client_start(void);
