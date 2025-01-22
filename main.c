@@ -5,13 +5,14 @@
 #define MODES_COUNT 2
 #define MODES_MAXLENGTH 8
 
+int8_t get_selection_from_args(int argc, char *argv[]);
+void print_usage(const char* process_name);
+
 const char modes[MODES_COUNT][MODES_MAXLENGTH] =
 {
     "server", "client"
 };
 
-int8_t get_selection_from_args(int argc, char *argv[]);
-void print_usage(const char* process_name);
 
 int main(int argc, char *argv[])
 {

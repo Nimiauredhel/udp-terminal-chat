@@ -5,13 +5,16 @@ static const char *msg_format_text = "[%s] %s (%s:%u):\n ~ %s";
 static const char *msg_format_join = "[%s] %s (%s:%u) has joined the conversation.";
 static const char *msg_format_quit = "[%s] %s (%s:%u) has left the conversation.";
 
+static bool should_terminate = false;
+
 static void server_init(ServerSideData_t *data);
 static void server_create_monitor_thread(ServerSideData_t *data);
 static void *server_monitor_loop(void *arg);
-static void server_loop(ServerSideData_t *data);
+static void server_loop(ServerSideData_t *data) __attribute__ ((__noreturn__));
 static void handle_client_join(ServerSideData_t *data, char *join_message, struct sockaddr_in *address, int8_t index);
 static void handle_client_quit(ServerSideData_t *data, int8_t index);
 static void forward_message_to_clients(ServerSideData_t *data, int8_t subject_client_index, char *message, const char *format, bool to_subject, bool local_print);
+static void server_terminate(ServerSideData_t *data, int exit_value) __attribute__ ((__noreturn__));
 static int8_t get_free_client_index(ServerSideData_t *data);
 static int8_t get_matching_client_index(ServerSideData_t* data, struct sockaddr_in *address);
 static void timedate_to_string(time_t timedate, char *buff);
@@ -26,17 +29,84 @@ void server_start(void)
     server_loop(server_side_data);
 }
 
-static void timedate_to_string(time_t timedate, char *buff)
+static void server_signal_handler(int signum)
 {
-    struct tm *now_structured_ptr = localtime(&timedate);
+    switch (signum)
+    {
+        case SIGINT:
+        case SIGTERM:
+        case SIGHUP:
+            should_terminate = true;
+            break;
+    }
+}
 
-    sprintf(buff, "%02d:%02d:%02d %02d/%02d/%d",
-            now_structured_ptr->tm_hour,
-            now_structured_ptr->tm_min,
-            now_structured_ptr->tm_sec,
-            now_structured_ptr->tm_mday,
-            now_structured_ptr->tm_mon + 1,
-            now_structured_ptr->tm_year + 1900);
+static void server_init(ServerSideData_t *data)
+{
+    int rx_port_int;
+    char rx_port[PORT_BUFF_LENGTH];
+
+    should_terminate = false;
+
+    struct sigaction action;
+    memset(&action, 0, sizeof(action));
+    action.sa_handler = server_signal_handler;
+    sigaction(SIGINT, &action, NULL);
+    sigaction(SIGTERM, &action, NULL);
+    sigaction(SIGHUP, &action, NULL);
+
+    data->local_address.sin_family = AF_INET;
+    data->local_address.sin_addr.s_addr = INADDR_ANY;
+
+    printf("Server mode initializing.\nInput Rx port (leave blank for default): ");
+
+    fgets(rx_port, PORT_BUFF_LENGTH, stdin);
+    rx_port[strcspn(rx_port, "\n")] = 0;
+
+    if (strlen(rx_port) <= 1024)
+    {
+        rx_port_int = PORT_MIN;
+    }
+    else
+    {
+        rx_port_int = atoi(rx_port);
+    }
+
+    data->local_address.sin_port = htons(rx_port_int);
+
+    data->udp_rx_socket = socket(AF_INET, SOCK_DGRAM, 0);
+    data->udp_tx_socket = socket(AF_INET, SOCK_DGRAM, 0);
+
+    server_error_zero(data->udp_rx_socket, EXIT_FAILURE, "Failed to create rx socket", data);
+    server_error_zero(data->udp_tx_socket, EXIT_FAILURE, "Failed to create tx socket", data);
+
+    //bind the rx socket to the local address/port
+    server_error_negative(bind(data->udp_rx_socket, (struct sockaddr *)&(data->local_address), sizeof(data->local_address)), EXIT_FAILURE, "Could not bind rx socket", data);
+
+    struct ifaddrs *addresses_head;
+
+    server_error_negative(getifaddrs(&addresses_head), EXIT_FAILURE, "Could not acquire addresses list", data);
+
+    printf("Server initialization complete.\nAddresses:\n");
+
+    struct ifaddrs *addresses_current = addresses_head;
+    char host[NI_MAXHOST];
+    
+    while(addresses_current != NULL)
+    {
+        if (addresses_current->ifa_addr != NULL
+            && addresses_current->ifa_addr->sa_family == AF_INET)
+        {
+            server_error_negative(
+                getnameinfo(addresses_current->ifa_addr, sizeof(struct sockaddr_in), host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST),
+                EXIT_FAILURE, "getnameinfo failed", data);
+            printf("    %s\n", host);
+        }
+
+        addresses_current = addresses_current->ifa_next;
+    }
+
+    freeifaddrs(addresses_head);
 }
 
 static int8_t get_free_client_index(ServerSideData_t *data)
@@ -203,98 +273,12 @@ static void handle_client_quit(ServerSideData_t *data, int8_t index)
     }
 }
 
-static void server_init(ServerSideData_t *data)
-{
-    int rx_port_int;
-    char rx_port[PORT_BUFF_LENGTH];
-
-    data->local_address.sin_family = AF_INET;
-    data->local_address.sin_addr.s_addr = INADDR_ANY;
-
-    printf("Server mode initializing.\nInput Rx port (leave blank for default): ");
-
-    fgets(rx_port, PORT_BUFF_LENGTH, stdin);
-    rx_port[strcspn(rx_port, "\n")] = 0;
-
-    if (strlen(rx_port) <= 1024)
-    {
-        rx_port_int = PORT_MIN;
-    }
-    else
-    {
-        rx_port_int = atoi(rx_port);
-    }
-
-    data->local_address.sin_port = htons(rx_port_int);
-
-    data->udp_rx_socket = socket(AF_INET, SOCK_DGRAM, 0);
-    data->udp_tx_socket = socket(AF_INET, SOCK_DGRAM, 0);
-
-    server_error_zero(data->udp_rx_socket, EXIT_FAILURE, "Failed to create rx socket", data);
-    server_error_zero(data->udp_tx_socket, EXIT_FAILURE, "Failed to create tx socket", data);
-
-    //bind the rx socket to the local address/port
-    server_error_negative(bind(data->udp_rx_socket, (struct sockaddr *)&(data->local_address), sizeof(data->local_address)), EXIT_FAILURE, "Could not bind rx socket", data);
-
-    struct ifaddrs *addresses_head;
-
-    server_error_negative(getifaddrs(&addresses_head), EXIT_FAILURE, "Could not acquire addresses list", data);
-
-    printf("Server initialization complete.\nAddresses:\n");
-
-    struct ifaddrs *addresses_current = addresses_head;
-    char host[NI_MAXHOST];
-    
-    while(addresses_current != NULL)
-    {
-        if (addresses_current->ifa_addr != NULL
-            && addresses_current->ifa_addr->sa_family == AF_INET)
-        {
-            server_error_negative(
-                getnameinfo(addresses_current->ifa_addr, sizeof(struct sockaddr_in), host, NI_MAXHOST, NULL, 0, NI_NUMERICHOST),
-                EXIT_FAILURE, "getnameinfo failed", data);
-            printf("    %s\n", host);
-        }
-
-        addresses_current = addresses_current->ifa_next;
-    }
-
-    freeifaddrs(addresses_head);
-}
-
 static void server_create_monitor_thread(ServerSideData_t *data)
 {
     pthread_attr_t attributes;
     pthread_attr_init(&attributes);
     pthread_attr_setstacksize(&attributes, PTHREAD_STACK_MIN);
     pthread_create(&(data->monitor_thread), &attributes, &server_monitor_loop, data);
-}
-
-static void *server_monitor_loop(void *arg)
-{
-    ServerSideData_t *data = (ServerSideData_t *)arg;
-
-    while (true)
-    {
-        sleep(1);
-
-        for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
-        {
-            if (data->clients_connected[i])
-            {
-                if (data->clients_timers[i] <= 0)
-                {
-                    handle_client_quit(data, i);
-                }
-                else
-                {
-                    data->clients_timers[i] -= 1;
-                }
-            }
-        }
-    }
-
-    return NULL;
 }
 
 static void server_loop(ServerSideData_t *data)
@@ -308,10 +292,12 @@ static void server_loop(ServerSideData_t *data)
 
     Message_t *incoming_message = malloc(msg_alloc_size);
 
-    while(true)
+    while(!should_terminate)
     {
         memset(incoming_message, 0, msg_alloc_size);
         ssize_t bytes_received = recvfrom(data->udp_rx_socket, incoming_message, msg_alloc_size, 0, (struct sockaddr*)&client_address, &client_address_length);
+
+        if (should_terminate) break;
 
         server_error_zero(bytes_received, EXIT_FAILURE, "Failed to receive bytes", data);
 
@@ -335,23 +321,67 @@ static void server_loop(ServerSideData_t *data)
         }
     }
 
+    server_terminate(data, EXIT_SUCCESS);
+}
+
+static void *server_monitor_loop(void *arg)
+{
+    ServerSideData_t *data = (ServerSideData_t *)arg;
+
+    while (!should_terminate)
+    {
+        sleep(1);
+
+        for (uint8_t i = 0; !should_terminate && i < MAX_CLIENT_COUNT; i++)
+        {
+            if (data->clients_connected[i])
+            {
+                if (data->clients_timers[i] <= 0)
+                {
+                    handle_client_quit(data, i);
+                }
+                else
+                {
+                    data->clients_timers[i] -= 1;
+                }
+            }
+        }
+    }
+
+    return NULL;
+}
+
+static void server_terminate(ServerSideData_t *data, int exit_value)
+{
     printf("Terminating.\n");
 
+    pthread_join(data->monitor_thread, NULL);
     close(data->udp_rx_socket);
     close(data->udp_tx_socket);
     free(data);
-    exit(EXIT_SUCCESS);
+    exit(exit_value);
 }
+
+static void timedate_to_string(time_t timedate, char *buff)
+{
+    struct tm *now_structured_ptr = localtime(&timedate);
+
+    sprintf(buff, "%02d:%02d:%02d %02d/%02d/%d",
+            now_structured_ptr->tm_hour,
+            now_structured_ptr->tm_min,
+            now_structured_ptr->tm_sec,
+            now_structured_ptr->tm_mday,
+            now_structured_ptr->tm_mon + 1,
+            now_structured_ptr->tm_year + 1900);
+}
+
 
 static void server_error_negative(int test_value, int exit_value, char *context_message, ServerSideData_t *data)
 {
     if (test_value < 0)
     {
         perror(context_message);
-        close(data->udp_rx_socket);
-        close(data->udp_tx_socket);
-        free(data);
-        exit(exit_value);
+        server_terminate(data, exit_value);
     }
 }
 
