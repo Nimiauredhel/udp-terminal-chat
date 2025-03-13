@@ -319,6 +319,7 @@ static void server_loop(ServerSideData_t *data)
                 incoming_message.header.sender_index = client_index;
                 forward_message_to_clients(data, &incoming_message, client_index, SFORWARD_ALL, true);
 
+                data->clients.connection_timers[client_index] = CLIENT_TIMEOUT;
                 data->clients.status_flags[client_index] = USTATUS_HOT;
                 data->clients.status_timers[client_index] = STATUS_HOT_TIMEOUT;
                 distribute_client_status(data, client_index);
@@ -326,6 +327,7 @@ static void server_loop(ServerSideData_t *data)
                 break;
             case MESSAGE_USERDATA:
                 pthread_mutex_lock(&data->clients.lock);
+                data->clients.connection_timers[client_index] = CLIENT_TIMEOUT;
                 data->clients.status_flags[client_index] = USTATUS_TYPING;
                 data->clients.status_timers[client_index] = STATUS_TYPING_TIMEOUT;
                 distribute_client_status(data, client_index);

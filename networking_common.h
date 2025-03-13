@@ -22,12 +22,12 @@
 #define PORT_MAX (65535)
 
 #define MAX_CLIENT_COUNT 16
-#define CLIENT_TIMEOUT 16
+#define CLIENT_TIMEOUT 10
 
 #define STATUS_HOT_TIMEOUT 1
 #define STATUS_TYPING_TIMEOUT 1
 #define STATUS_ACTIVE_TIMEOUT 9
-#define STATUS_NEW_TIMEOUT 5
+#define STATUS_NEW_TIMEOUT 2
 
 typedef enum MessageType
 {

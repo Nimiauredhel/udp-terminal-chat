@@ -279,7 +279,11 @@ static void client_peerlist_render(ClientPeerList_t *peers, ClientTUIData_t *tui
             {
                 short pair = peers->status_flags[i];
                 wattron(tui->win_users, COLOR_PAIR(pair));
-                mvwprintw(tui->win_users, row, 1, "%s", peers->names[i]);
+                mvwprintw(tui->win_users, row, peers->status_flags[i],
+                peers->status_flags[i] == USTATUS_TYPING ? "%s..."
+                : peers->status_flags[i] == USTATUS_HOT ?  "%s!"
+                : peers->status_flags[i] == USTATUS_IDLE ?  "%s zZz"
+                : "%s", peers->names[i]);
                 wattroff(tui->win_users, COLOR_PAIR(pair));
                 row++;
             }
@@ -364,7 +368,7 @@ static void client_tx_loop(ClientSideData_t *data)
     client_send_message(data);
 
     noecho();
-    timeout(1000);
+    timeout(2000);
 
     while(!should_terminate)
     {
@@ -515,8 +519,8 @@ static void* client_render_loop(void *arg)
 
     init_pair(USTATUS_NONE, COLOR_WHITE, COLOR_BLACK);
     init_pair(USTATUS_IDLE, COLOR_BLUE, COLOR_BLACK);
-    init_pair(USTATUS_NEW, COLOR_GREEN, COLOR_BLACK);
-    init_pair(USTATUS_ACTIVE, COLOR_CYAN, COLOR_BLACK);
+    init_pair(USTATUS_NEW, COLOR_CYAN, COLOR_BLACK);
+    init_pair(USTATUS_ACTIVE, COLOR_GREEN, COLOR_BLACK);
     init_pair(USTATUS_TYPING, COLOR_YELLOW, COLOR_BLACK);
     init_pair(USTATUS_HOT, COLOR_RED, COLOR_YELLOW);
 
