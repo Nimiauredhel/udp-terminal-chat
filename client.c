@@ -158,9 +158,9 @@ static void client_msglist_render(ClientMsgList_t *list, ClientTUIData_t *tui)
     if (tui->dirty_size || list->dirty)
     {
         list->dirty = false;
-        wclear(tui->win_messages);
         mvwin(tui->win_messages, tui->rows*0.05f, tui->cols*0.25f); // middle to left
         wresize(tui->win_messages, tui->rows*0.8f, tui->cols*0.75f);
+        wclear(tui->win_messages);
         box(tui->win_messages, 0, 0);
         mvwprintw(tui->win_messages, 0, 0, "Messages");
 
@@ -354,9 +354,9 @@ static void* client_render_loop(void *arg)
         if (data->input.dirty || tui->dirty_size)
         {
             data->input.dirty = false;
-            wclear(tui->win_input);
             mvwin(tui->win_input, tui->rows*0.85f, tui->cols*0.1f); // whole bottom
             wresize(tui->win_input, tui->rows*0.15f, tui->cols*0.8f);
+            wclear(tui->win_input);
             box(tui->win_input, 0, 0);
             mvwprintw(tui->win_input, 0, 0, "Input");
 
@@ -377,9 +377,9 @@ static void* client_render_loop(void *arg)
         if (tui->dirty_users || tui->dirty_size)
         {
             tui->dirty_users = false;
-            wclear(tui->win_users);
             mvwin(tui->win_users, tui->rows*0.25f, tui->cols*0.02f); // middle to bottom left
             wresize(tui->win_users, tui->rows*0.45f, tui->cols*0.22f);
+            wclear(tui->win_users);
             box(tui->win_users, 0, 0);
             mvwprintw(tui->win_users, 0, 0, "Users");
             wrefresh(tui->win_users);
@@ -389,9 +389,9 @@ static void* client_render_loop(void *arg)
         if (tui->dirty_session || tui->dirty_size)
         {
             tui->dirty_session = false;
-            wclear(tui->win_session);
             mvwin(tui->win_session, tui->rows*0.05f, tui->cols*0.02f); // top left
             wresize(tui->win_session, tui->rows*0.20f, tui->cols*0.22f);
+            wclear(tui->win_session);
             box(tui->win_session, 0, 0);
             mvwprintw(tui->win_session, 0, 0, "Session");
             wrefresh(tui->win_session);
