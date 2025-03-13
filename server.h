@@ -12,18 +12,25 @@ typedef enum ServerForwardingScope
     SFORWARD_OTHERS = 3, // forward to everyone *except* the subject
 } ServerForwardingScope_t;
 
+typedef struct ServerClientsList
+{
+    pthread_mutex_t lock;
+    uint8_t count;
+    UserStatus_t status_flags[MAX_CLIENT_COUNT];
+    uint8_t status_timers[MAX_CLIENT_COUNT];
+    uint8_t connection_timers[MAX_CLIENT_COUNT];
+    struct sockaddr_in addresses[MAX_CLIENT_COUNT];
+    char names[MAX_CLIENT_COUNT][NAME_BUFF_LENGTH];
+} ServerClientsList_t;
+
 typedef struct ServerSideData
 {
     int udp_rx_socket;
     int udp_tx_socket;
     struct sockaddr_in local_address;
     pthread_t monitor_thread;
+    ServerClientsList_t clients;
 
-    uint8_t clients_count;
-    bool clients_connected[MAX_CLIENT_COUNT];
-    uint8_t clients_timers[MAX_CLIENT_COUNT];
-    struct sockaddr_in clients_addresses[MAX_CLIENT_COUNT];
-    char clients_names[MAX_CLIENT_COUNT][NAME_BUFF_LENGTH];
 } ServerSideData_t;
 
 void server_start(void) __attribute__ ((__noreturn__));

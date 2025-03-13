@@ -173,6 +173,7 @@ static void client_msglist_push(ClientMsgList_t *list, Message_t *msg)
     explicit_bzero(list->msgs[new_idx], MSG_REP_MAX_CHARS);
     format_message(msg->body, msg->header.sender_name, ntohl(msg->header.timestamp), get_format_by_message_type(ntohs(msg->header.message_type)),
             list->msgs[new_idx]);
+    list->user_indices[new_idx] = msg->header.sender_index;
     list->dirty = true;
 
     pthread_mutex_unlock(&list->lock);
@@ -186,29 +187,31 @@ static void client_peerlist_init(ClientPeerList_t *peers)
 
 static void client_peerlist_update(ClientPeerList_t *peers, Message_t *update_msg)
 {
+    UserStatus_t new_status = USTATUS_NONE;
+
     pthread_mutex_lock(&peers->lock);
 
     switch((MessageType_t)ntohs(update_msg->header.message_type))
     {
         case MESSAGE_JOIN:
         case MESSAGE_USERDATA:
+            new_status = (UserStatus_t)atoi(update_msg->body);
             strncpy(peers->names[update_msg->header.sender_index], update_msg->header.sender_name, NAME_BUFF_LENGTH);
-            peers->connected[update_msg->header.sender_index] = true;
-            peers->dirty = true;
             break;
         case MESSAGE_QUIT:
+            new_status = USTATUS_NONE;
             explicit_bzero(peers->names[update_msg->header.sender_index], NAME_BUFF_LENGTH);
-            peers->connected[update_msg->header.sender_index] = false;
-            peers->dirty = true;
             break;
         case MESSAGE_UNDEFINED:
         case MESSAGE_CHAT:
         case MESSAGE_RAW:
         case MESSAGE_STAY:
         case MESSAGE_ERROR:
-        case MESSAGE_USER_IS_TYPING:
             break;
     }
+
+    peers->status_flags[update_msg->header.sender_index] = new_status;
+    peers->dirty = true;
 
     pthread_mutex_unlock(&peers->lock);
 }
@@ -272,9 +275,12 @@ static void client_peerlist_render(ClientPeerList_t *peers, ClientTUIData_t *tui
 
         for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
         {
-            if (peers->connected[i])
+            if (peers->status_flags[i] > USTATUS_NONE)
             {
+                short pair = peers->status_flags[i];
+                wattron(tui->win_users, COLOR_PAIR(pair));
                 mvwprintw(tui->win_users, row, 1, "%s", peers->names[i]);
+                wattroff(tui->win_users, COLOR_PAIR(pair));
                 row++;
             }
         }
@@ -311,7 +317,9 @@ static void client_msglist_render(ClientMsgList_t *list, ClientTUIData_t *tui)
             row++;
             counter++;
             if (current >= CLIENT_MAX_VISIBLE_MSGS) current = 0;
+            wattron(tui->win_messages, COLOR_PAIR(100+list->user_indices[current]));
             mvwprintw(tui->win_messages, row, 1, "%s", list->msgs[current]);
+            wattroff(tui->win_messages, COLOR_PAIR(100+list->user_indices[current]));
         }
         while (current != list->tail && counter < CLIENT_MAX_VISIBLE_MSGS
                 && row < rows);
@@ -469,7 +477,6 @@ static void* client_rx_loop(void *arg)
                 break;
             case MESSAGE_STAY:
             case MESSAGE_ERROR:
-            case MESSAGE_USER_IS_TYPING:
             case MESSAGE_UNDEFINED:
                 break;
         }
@@ -486,6 +493,24 @@ static void* client_render_loop(void *arg)
     ClientPeerList_t *peers = &data->peer_list;
     ClientSessionData_t *session = &data->session;
     ClientInputState_t *input = &data->input;
+
+    start_color();
+
+    init_pair(USTATUS_NONE, COLOR_WHITE, COLOR_BLACK);
+    init_pair(USTATUS_IDLE, COLOR_BLUE, COLOR_BLACK);
+    init_pair(USTATUS_NEW, COLOR_GREEN, COLOR_BLACK);
+    init_pair(USTATUS_ACTIVE, COLOR_CYAN, COLOR_BLACK);
+    init_pair(USTATUS_TYPING, COLOR_YELLOW, COLOR_BLACK);
+    init_pair(USTATUS_HOT, COLOR_RED, COLOR_YELLOW);
+
+    short color_code = 1;
+
+    for (int i = 0; i < MAX_CLIENT_COUNT; i++)
+    {
+        init_pair(100+i, color_code, COLOR_BLACK);
+        color_code++;
+        if (color_code > 7) color_code = 1;
+    }
 
     getmaxyx(curscr, tui->rows, tui->cols);
 
@@ -545,7 +570,7 @@ static void* client_render_loop(void *arg)
 
         // 16ms frame delay to approximate 60fps
         usleep(16000);
-    }
+    } 
 
     delwin(tui->win_input);
     delwin(tui->win_users);
@@ -579,10 +604,8 @@ static void client_send_message(ClientSideData_t *data)
             sprintf(data->outgoing_message.body, "%u:%s", ntohs(data->local_address.sin_port), data->client_name);
             msg_body_length = strlen(data->outgoing_message.body);
             break;
-        case MESSAGE_USER_IS_TYPING:
-          break;
         case MESSAGE_USERDATA:
-          break;
+            break;
         }
 
     data->outgoing_message.header.body_length = htons(msg_body_length);

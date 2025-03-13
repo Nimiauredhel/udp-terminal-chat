@@ -12,6 +12,7 @@ typedef struct ClientMsgList
     pthread_mutex_t lock;
     int8_t head;
     int8_t tail;
+    int8_t user_indices[CLIENT_MAX_VISIBLE_MSGS];
     char msgs[CLIENT_MAX_VISIBLE_MSGS][MSG_REP_MAX_CHARS];
 } ClientMsgList_t;
 
@@ -19,7 +20,7 @@ typedef struct ClientPeerList
 {
     bool dirty;
     pthread_mutex_t lock;
-    bool connected[MAX_CLIENT_COUNT];
+    UserStatus_t status_flags[MAX_CLIENT_COUNT];
     char names[MAX_CLIENT_COUNT][NAME_BUFF_LENGTH];
 } ClientPeerList_t;
 

@@ -3,6 +3,7 @@
 const char *msg_format_text = "[%s] %s: %s";
 const char *msg_format_join = "[%s] %s has joined the conversation.";
 const char *msg_format_quit = "[%s] %s has left the conversation.";
+const char *msg_format_status = "[%s] %s new status!.";
 
 const char *get_format_by_message_type(MessageType_t msg_type)
 {
@@ -14,12 +15,12 @@ const char *get_format_by_message_type(MessageType_t msg_type)
             return msg_format_quit;
         case MESSAGE_CHAT:
             return msg_format_text;
+        case MESSAGE_USERDATA:
+            return msg_format_status;
         case MESSAGE_UNDEFINED:
         case MESSAGE_RAW:
         case MESSAGE_STAY:
         case MESSAGE_ERROR:
-        case MESSAGE_USER_IS_TYPING:
-        case MESSAGE_USERDATA:
             return NULL;
           break;
         }

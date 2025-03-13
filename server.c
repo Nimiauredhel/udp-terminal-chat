@@ -6,6 +6,7 @@ static void *server_monitor_loop(void *arg);
 static void server_loop(ServerSideData_t *data) __attribute__ ((__noreturn__));
 static void handle_client_join(ServerSideData_t *data, char *join_message, struct sockaddr_in *address, int8_t index);
 static void handle_client_quit(ServerSideData_t *data, int8_t index);
+static void distribute_client_status(ServerSideData_t *data, int8_t index);
 static void forward_message_to_clients(ServerSideData_t *data, Message_t *message, int8_t subject_client_index, ServerForwardingScope_t scope, bool local_print);
 static void server_terminate(ServerSideData_t *data, int exit_value) __attribute__ ((__noreturn__));
 static int8_t get_free_client_index(ServerSideData_t *data);
@@ -27,6 +28,8 @@ static void server_init(ServerSideData_t *data)
 {
     int rx_port_int;
     char rx_port[PORT_BUFF_LENGTH];
+
+    pthread_mutex_init(&data->clients.lock, NULL);
 
     data->local_address.sin_family = AF_INET;
     data->local_address.sin_addr.s_addr = INADDR_ANY;
@@ -86,7 +89,7 @@ static int8_t get_free_client_index(ServerSideData_t *data)
 {
     for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
     {
-        if (!data->clients_connected[i]) return i;
+        if (data->clients.status_flags[i] == USTATUS_NONE) return i;
     }
 
     return -1;
@@ -96,9 +99,9 @@ static int8_t get_matching_client_index(ServerSideData_t* data, struct sockaddr_
 {
     for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
     {
-        if (data->clients_connected[i]
-            && data->clients_addresses[i].sin_addr.s_addr == address->sin_addr.s_addr
-            && data->clients_addresses[i].sin_port == address->sin_port)
+        if (data->clients.status_flags[i] > USTATUS_NONE
+            && data->clients.addresses[i].sin_addr.s_addr == address->sin_addr.s_addr
+            && data->clients.addresses[i].sin_port == address->sin_port)
         {
             return i;
         }
@@ -113,46 +116,47 @@ static void forward_message_to_clients(ServerSideData_t *data, Message_t *messag
     
     switch(scope)
     {
-    case SFORWARD_UNDEFINED:
-        break;
-    case SFORWARD_INDIVIDUAL:
-        peer_address_length = sizeof(data->clients_addresses[subject_client_index]);
-
-        if (0 > sendto(data->udp_tx_socket, message, sizeof(Message_t), 0,
-            (struct sockaddr *)&(data->clients_addresses[subject_client_index]), peer_address_length))
-        {
-            printf("Failed to forward message to %s:%u",
-                    inet_ntoa(data->clients_addresses[subject_client_index].sin_addr),
-                    ntohs(data->clients_addresses[subject_client_index].sin_port)); 
-        }
-        break;
-    case SFORWARD_ALL:
-    case SFORWARD_OTHERS:
-        for (int8_t index = 0; index < MAX_CLIENT_COUNT; index++)
-        {
-            if (!data->clients_connected[index] || (scope == SFORWARD_OTHERS && index == subject_client_index))
-                continue;
-
-            peer_address_length = sizeof(data->clients_addresses[index]);
+        case SFORWARD_INDIVIDUAL:
+            peer_address_length = sizeof(data->clients.addresses[subject_client_index]);
 
             if (0 > sendto(data->udp_tx_socket, message, sizeof(Message_t), 0,
-                (struct sockaddr *)&(data->clients_addresses[index]), peer_address_length))
+                (struct sockaddr *)&(data->clients.addresses[subject_client_index]), peer_address_length))
             {
                 printf("Failed to forward message to %s:%u",
-                        inet_ntoa(data->clients_addresses[index].sin_addr),
-                        ntohs(data->clients_addresses[index].sin_port)); 
+                        inet_ntoa(data->clients.addresses[subject_client_index].sin_addr),
+                        ntohs(data->clients.addresses[subject_client_index].sin_port)); 
             }
+            break;
+        case SFORWARD_ALL:
+        case SFORWARD_OTHERS:
+            for (int8_t index = 0; index < MAX_CLIENT_COUNT; index++)
+            {
+                if (data->clients.status_flags[index] == USTATUS_NONE
+                    || (scope == SFORWARD_OTHERS && index == subject_client_index))
+                    continue;
 
-            //printf("Forwarded message to %s (%s:%u).\n", data->clients_names[index], inet_ntoa(data->clients_addresses[index].sin_addr), ntohs(data->clients_addresses[index].sin_port));
-        }
-      break;
+                peer_address_length = sizeof(data->clients.addresses[index]);
+
+                if (0 > sendto(data->udp_tx_socket, message, sizeof(Message_t), 0,
+                    (struct sockaddr *)&(data->clients.addresses[index]), peer_address_length))
+                {
+                    printf("Failed to forward message to %s:%u",
+                            inet_ntoa(data->clients.addresses[index].sin_addr),
+                            ntohs(data->clients.addresses[index].sin_port)); 
+                }
+
+                //printf("Forwarded message to %s (%s:%u).\n", data->clients_names[index], inet_ntoa(data->clients_addresses[index].sin_addr), ntohs(data->clients_addresses[index].sin_port));
+            }
+            break;
+        case SFORWARD_UNDEFINED:
+            break;
     }
 
     if (local_print)
     {
         char full_message[MSG_MAX_CHARS * 2];
 
-        format_message(message->body, subject_client_index == -1 ? NULL : data->clients_names[subject_client_index],
+        format_message(message->body, subject_client_index == -1 ? NULL : data->clients.names[subject_client_index],
                 ntohl(message->header.timestamp), get_format_by_message_type(ntohs(message->header.message_type)), full_message);
 
         printf("%s\n", full_message);
@@ -181,9 +185,10 @@ static void handle_client_join(ServerSideData_t *data, char *join_message, struc
             char *search = ":";
             uint16_t port_int;
 
-            data->clients_addresses[subject_index] = *address;
-            data->clients_connected[subject_index] = true;
-            data->clients_timers[subject_index] = CLIENT_TIMEOUT;
+            data->clients.addresses[subject_index] = *address;
+            data->clients.status_flags[subject_index] = USTATUS_NEW;
+            data->clients.connection_timers[subject_index] = CLIENT_TIMEOUT;
+            data->clients.status_timers[subject_index] = STATUS_NEW_TIMEOUT;
 
             // parse user data from join message
             token = strtok(join_message, search);
@@ -192,37 +197,39 @@ static void handle_client_join(ServerSideData_t *data, char *join_message, struc
             token = strtok(NULL, search);
             sprintf(name, "%s", token);
 
-            data->clients_addresses[subject_index].sin_port = htons(port_int);
-            sprintf(data->clients_names[subject_index], "%s", name);
-            data->clients_count++;
+            data->clients.addresses[subject_index].sin_port = htons(port_int);
+            sprintf(data->clients.names[subject_index], "%s", name);
+            data->clients.count++;
 
             // prepare base notification packet
             time_t timedate = time(NULL);
-            Message_t notification = { .header = { .sender_index = 255, .sender_name = "SERVER", .timestamp = htonl(timedate), .encoding_version = htons(ENCODING_VERSION) } };
+            Message_t notification = { .header = { .timestamp = htonl(timedate), .encoding_version = htons(ENCODING_VERSION) } };
 
             // send current user data to new user
             for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
             {
-                if (data->clients_connected[i])
+                if (data->clients.status_flags[i] > USTATUS_NONE)
                 {
                     notification.header.sender_index = i;
-                    strncpy(notification.header.sender_name, data->clients_names[i], NAME_BUFF_LENGTH);
+                    strncpy(notification.header.sender_name, data->clients.names[i], NAME_BUFF_LENGTH);
                     notification.header.message_type = htons(MESSAGE_USERDATA);
+                    sprintf(notification.body, "%d", data->clients.status_flags[i]);
                     forward_message_to_clients(data, &notification, subject_index, SFORWARD_INDIVIDUAL, false);
                 }
             }
 
             // notify other users about new join
             notification.header.sender_index = subject_index;
-            strncpy(notification.header.sender_name, subject_index < 0 ? "?" : data->clients_names[subject_index], NAME_BUFF_LENGTH);
+            strncpy(notification.header.sender_name, subject_index < 0 ? "?" : data->clients.names[subject_index], NAME_BUFF_LENGTH);
             notification.header.message_type = htons(MESSAGE_JOIN);
+            sprintf(notification.body, "%d", data->clients.status_flags[subject_index]);
             forward_message_to_clients(data, &notification, subject_index, SFORWARD_OTHERS, true);
         }
     }
     // existing client, reset timeout
     else
     {
-        data->clients_timers[subject_index] = CLIENT_TIMEOUT;
+        data->clients.connection_timers[subject_index] = CLIENT_TIMEOUT;
     }
 }
 
@@ -231,19 +238,36 @@ static void handle_client_quit(ServerSideData_t *data, int8_t index)
     if (index != -1)
     {
         // notify clients about quitting user
-        time_t timedate = time(NULL);
-        Message_t notification = { .header = { .timestamp = timedate, .encoding_version = htons(ENCODING_VERSION) } };
+        Message_t notification = { .header = { .timestamp = htonl(time(NULL)), .encoding_version = htons(ENCODING_VERSION) } };
 
         notification.header.sender_index = index;
-        strncpy(notification.header.sender_name, data->clients_names[index], NAME_BUFF_LENGTH);
+        strncpy(notification.header.sender_name, data->clients.names[index], NAME_BUFF_LENGTH);
         notification.header.message_type = htons(MESSAGE_QUIT);
         forward_message_to_clients(data, &notification, index, SFORWARD_OTHERS, true);
 
         // locally unregister user
-        data->clients_connected[index] = false;
-        data->clients_count--;
-        explicit_bzero(data->clients_names[index], NAME_BUFF_LENGTH);
+        data->clients.status_flags[index] = USTATUS_NONE;
+        data->clients.count--;
+        explicit_bzero(data->clients.names[index], NAME_BUFF_LENGTH);
     }
+}
+
+static void distribute_client_status(ServerSideData_t *data, int8_t index)
+{
+    Message_t notification =
+    {
+        .header =
+        {
+            .encoding_version = htons(ENCODING_VERSION),
+            .timestamp = htonl(time(NULL)),
+            .sender_index = index,
+            .message_type = htons(MESSAGE_USERDATA),
+        }
+    };
+
+    strncpy(notification.header.sender_name, data->clients.names[index], NAME_BUFF_LENGTH);
+    sprintf(notification.body, "%d", data->clients.status_flags[index]);
+    forward_message_to_clients(data, &notification, index, SFORWARD_ALL, true);
 }
 
 static void server_create_monitor_thread(ServerSideData_t *data)
@@ -281,18 +305,27 @@ static void server_loop(ServerSideData_t *data)
                 break;
             case MESSAGE_JOIN:
             case MESSAGE_STAY:
+                pthread_mutex_lock(&data->clients.lock);
                 handle_client_join(data, incoming_message.body, &client_address, client_index);
+                pthread_mutex_unlock(&data->clients.lock);
                 break;
             case MESSAGE_QUIT:
+                pthread_mutex_lock(&data->clients.lock);
                 handle_client_quit(data, client_index);
+                pthread_mutex_unlock(&data->clients.lock);
                 break;
             case MESSAGE_CHAT:
+                pthread_mutex_lock(&data->clients.lock);
                 incoming_message.header.sender_index = client_index;
                 forward_message_to_clients(data, &incoming_message, client_index, SFORWARD_ALL, true);
+
+                data->clients.status_flags[client_index] = USTATUS_HOT;
+                data->clients.status_timers[client_index] = STATUS_HOT_TIMEOUT;
+                distribute_client_status(data, client_index);
+                pthread_mutex_unlock(&data->clients.lock);
                 break;
             case MESSAGE_RAW:
             case MESSAGE_ERROR:
-            case MESSAGE_USER_IS_TYPING:
             case MESSAGE_USERDATA:
               break;
             }
@@ -309,20 +342,51 @@ static void *server_monitor_loop(void *arg)
     {
         sleep(1);
 
+        pthread_mutex_lock(&data->clients.lock);
+
         for (uint8_t i = 0; !should_terminate && i < MAX_CLIENT_COUNT; i++)
         {
-            if (data->clients_connected[i])
+            if (data->clients.status_flags[i] > USTATUS_NONE)
             {
-                if (data->clients_timers[i] <= 0)
+                if (data->clients.connection_timers[i] <= 0)
                 {
                     handle_client_quit(data, i);
                 }
                 else
                 {
-                    data->clients_timers[i] -= 1;
+                    data->clients.connection_timers[i]--;
+
+                    if (data->clients.status_flags[i] > USTATUS_IDLE)
+                    {
+                        if (data->clients.status_timers[i] <= 0)
+                        {
+                            switch(data->clients.status_flags[i])
+                            {
+                                case USTATUS_HOT:
+                                case USTATUS_TYPING:
+                                    data->clients.status_flags[i] = USTATUS_ACTIVE;
+                                    data->clients.status_timers[i] = STATUS_ACTIVE_TIMEOUT;
+                                    break;
+                                case USTATUS_ACTIVE:
+                                case USTATUS_NEW:
+                                    data->clients.status_flags[i] = USTATUS_IDLE;
+                                    data->clients.status_timers[i] = STATUS_ACTIVE_TIMEOUT;
+                                    break;
+                                case USTATUS_IDLE:
+                                case USTATUS_NONE:
+                                    // should be unreachable
+                                    break;
+                            }
+
+                            distribute_client_status(data, i);
+                        }
+                        else data->clients.status_timers[i]--;
+                    }
                 }
             }
         }
+
+        pthread_mutex_unlock(&data->clients.lock);
     }
 
     return NULL;

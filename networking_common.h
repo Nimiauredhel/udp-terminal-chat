@@ -24,6 +24,11 @@
 #define MAX_CLIENT_COUNT 16
 #define CLIENT_TIMEOUT 16
 
+#define STATUS_HOT_TIMEOUT 1
+#define STATUS_TYPING_TIMEOUT 1
+#define STATUS_ACTIVE_TIMEOUT 9
+#define STATUS_NEW_TIMEOUT 5
+
 typedef enum MessageType
 {
     MESSAGE_UNDEFINED = 0,
@@ -33,9 +38,18 @@ typedef enum MessageType
     MESSAGE_RAW = 4,
     MESSAGE_STAY = 5,
     MESSAGE_ERROR = 6,
-    MESSAGE_USER_IS_TYPING = 7,
-    MESSAGE_USERDATA = 8,
+    MESSAGE_USERDATA = 7,
 } MessageType_t;
+
+typedef enum UserStatus
+{
+    USTATUS_NONE = 0, // undefined or vacated user slot
+    USTATUS_IDLE = 1, // recently inactive
+    USTATUS_NEW = 2, // recently joined
+    USTATUS_ACTIVE = 3, // recently typed or sent a message
+    USTATUS_TYPING = 4, // just typed
+    USTATUS_HOT = 5, // just sent a message
+} UserStatus_t;
 
 #pragma pack(push, 2)
 
