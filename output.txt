@@ -1,0 +1,80 @@
+valgrind -s --leak-check=yes --track-origins=yes ./program.o client
+==19019== Memcheck, a memory error detector
+==19019== Copyright (C) 2002-2017, and GNU GPL'd, by Julian Seward et al.
+==19019== Using Valgrind-3.18.1 and LibVEX; rerun with -h for copyright info
+==19019== Command: ./program.o client
+==19019== 
+[?1049h[22;0;0t[1;24r(B[m[4l[?7h[H[2JClient mode initializing.[2dInput server IP: [3dInput server port: [4dDefaulting to port 49152.[5dClient will receive on port 49152.[6dInput client name: [7d[8dClient (port 49152) connecting to server (127.0.0.1:49152).[9d==19019== 
+==19019== Process terminating with default action of signal 11 (SIGSEGV)
+==19019==  Bad permissions for mapped region at address 0x4860E50
+==19019==    at 0x10B659: client_rx_loop (client.c:317)
+==19019== 
+==19019== HEAP SUMMARY:
+==19019==     in use at exit: 52,687 bytes in 152 blocks
+==19019==   total heap usage: 165 allocs, 13 frees, 66,262 bytes allocated
+==19019== 
+==19019== 9 bytes in 1 blocks are possibly lost in loss record 8 of 80
+==19019==    at 0x4848899: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==19019==    by 0x497258E: strdup (strdup.c:42)
+==19019==    by 0x48ABD54: ??? (in /usr/lib/x86_64-linux-gnu/libtinfo.so.6.3)
+==19019==    by 0x48AF098: _nc_tiparm (in /usr/lib/x86_64-linux-gnu/libtinfo.so.6.3)
+==19019==    by 0x487F238: newterm_sp (in /usr/lib/x86_64-linux-gnu/libncurses.so.6.3)
+==19019==    by 0x487FB4C: newterm (in /usr/lib/x86_64-linux-gnu/libncurses.so.6.3)
+==19019==    by 0x487FBDF: initscr (in /usr/lib/x86_64-linux-gnu/libncurses.so.6.3)
+==19019==    by 0x10A8D9: client_start (client.c:19)
+==19019==    by 0x10C52C: main (main.c:29)
+==19019== 
+==19019== 24 bytes in 1 blocks are possibly lost in loss record 29 of 80
+==19019==    at 0x4848899: malloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==19019==    by 0x49E9F9E: tsearch (tsearch.c:337)
+==19019==    by 0x48ABD6E: ??? (in /usr/lib/x86_64-linux-gnu/libtinfo.so.6.3)
+==19019==    by 0x48AF098: _nc_tiparm (in /usr/lib/x86_64-linux-gnu/libtinfo.so.6.3)
+==19019==    by 0x487F238: newterm_sp (in /usr/lib/x86_64-linux-gnu/libncurses.so.6.3)
+==19019==    by 0x487FB4C: newterm (in /usr/lib/x86_64-linux-gnu/libncurses.so.6.3)
+==19019==    by 0x487FBDF: initscr (in /usr/lib/x86_64-linux-gnu/libncurses.so.6.3)
+==19019==    by 0x10A8D9: client_start (client.c:19)
+==19019==    by 0x10C52C: main (main.c:29)
+==19019== 
+==19019== 168 bytes in 1 blocks are possibly lost in loss record 56 of 80
+==19019==    at 0x484DA83: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==19019==    by 0x48ABCCD: ??? (in /usr/lib/x86_64-linux-gnu/libtinfo.so.6.3)
+==19019==    by 0x48AF098: _nc_tiparm (in /usr/lib/x86_64-linux-gnu/libtinfo.so.6.3)
+==19019==    by 0x487F238: newterm_sp (in /usr/lib/x86_64-linux-gnu/libncurses.so.6.3)
+==19019==    by 0x487FB4C: newterm (in /usr/lib/x86_64-linux-gnu/libncurses.so.6.3)
+==19019==    by 0x487FBDF: initscr (in /usr/lib/x86_64-linux-gnu/libncurses.so.6.3)
+==19019==    by 0x10A8D9: client_start (client.c:19)
+==19019==    by 0x10C52C: main (main.c:29)
+==19019== 
+==19019== 272 bytes in 1 blocks are possibly lost in loss record 59 of 80
+==19019==    at 0x484DA83: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==19019==    by 0x40147D9: calloc (rtld-malloc.h:44)
+==19019==    by 0x40147D9: allocate_dtv (dl-tls.c:375)
+==19019==    by 0x40147D9: _dl_allocate_tls (dl-tls.c:634)
+==19019==    by 0x495F7B4: allocate_stack (allocatestack.c:430)
+==19019==    by 0x495F7B4: pthread_create@@GLIBC_2.34 (pthread_create.c:647)
+==19019==    by 0x10B2A6: client_create_render_thread (client.c:224)
+==19019==    by 0x10A920: client_start (client.c:29)
+==19019==    by 0x10C52C: main (main.c:29)
+==19019== 
+==19019== 272 bytes in 1 blocks are possibly lost in loss record 60 of 80
+==19019==    at 0x484DA83: calloc (in /usr/libexec/valgrind/vgpreload_memcheck-amd64-linux.so)
+==19019==    by 0x40147D9: calloc (rtld-malloc.h:44)
+==19019==    by 0x40147D9: allocate_dtv (dl-tls.c:375)
+==19019==    by 0x40147D9: _dl_allocate_tls (dl-tls.c:634)
+==19019==    by 0x495F7B4: allocate_stack (allocatestack.c:430)
+==19019==    by 0x495F7B4: pthread_create@@GLIBC_2.34 (pthread_create.c:647)
+==19019==    by 0x10B231: client_create_rx_thread (client.c:216)
+==19019==    by 0x10A92C: client_start (client.c:30)
+==19019==    by 0x10C52C: main (main.c:29)
+==19019== 
+==19019== LEAK SUMMARY:
+==19019==    definitely lost: 0 bytes in 0 blocks
+==19019==    indirectly lost: 0 bytes in 0 blocks
+==19019==      possibly lost: 745 bytes in 5 blocks
+==19019==    still reachable: 51,942 bytes in 147 blocks
+==19019==         suppressed: 0 bytes in 0 blocks
+==19019== Reachable blocks (those to which a pointer was found) are not shown.
+==19019== To see them, rerun with: --leak-check=full --show-leak-kinds=all
+==19019== 
+==19019== ERROR SUMMARY: 5 errors from 5 contexts (suppressed: 0 from 0)
+make: *** [Makefile:25: valgrind] Segmentation fault

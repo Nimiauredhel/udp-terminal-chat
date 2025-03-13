@@ -18,9 +18,13 @@ const char *get_format_by_message_type(MessageType_t msg_type)
         case MESSAGE_RAW:
         case MESSAGE_STAY:
         case MESSAGE_ERROR:
-        default:
+        case MESSAGE_USER_IS_TYPING:
+        case MESSAGE_USERDATA:
             return NULL;
-    }
+          break;
+        }
+
+    return NULL;
 }
 
 void format_message(const char *message, const char *sender, time_t timedate, const char *format, char *output)

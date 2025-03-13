@@ -9,24 +9,30 @@
 typedef struct ClientMsgList
 {
     bool dirty;
+    pthread_mutex_t lock;
     int8_t head;
     int8_t tail;
-    pthread_mutex_t lock;
     char msgs[CLIENT_MAX_VISIBLE_MSGS][MSG_REP_MAX_CHARS];
 } ClientMsgList_t;
+
+typedef struct ClientPeerList
+{
+    bool dirty;
+    pthread_mutex_t lock;
+    bool connected[MAX_CLIENT_COUNT];
+    char names[MAX_CLIENT_COUNT][NAME_BUFF_LENGTH];
+} ClientPeerList_t;
 
 typedef struct ClientInputState
 {
     bool dirty;
-    int16_t idx;
     pthread_mutex_t lock;
+    int16_t idx;
     char buff[MSG_MAX_CHARS];
 } ClientInputState_t;
 
 typedef struct ClientTUIData
 {
-    bool dirty_users;
-    bool dirty_session;
     bool dirty_size;
     int rows;
     int cols;
@@ -37,6 +43,12 @@ typedef struct ClientTUIData
     WINDOW *win_users;
     WINDOW *win_session;
 } ClientTUIData_t;
+
+typedef struct ClientSessionData
+{
+    bool dirty;
+    pthread_mutex_t lock;
+} ClientSessionData_t;
 
 typedef struct ClientSideData
 {
@@ -51,7 +63,9 @@ typedef struct ClientSideData
 
     ClientInputState_t input;
     ClientMsgList_t msg_list;
+    ClientPeerList_t peer_list;
     ClientTUIData_t tui;
+    ClientSessionData_t session;
 } ClientSideData_t;
 
 void client_start(void) __attribute__ ((__noreturn__));

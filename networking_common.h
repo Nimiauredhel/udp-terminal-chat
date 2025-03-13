@@ -10,16 +10,19 @@
 
 #include "common.h"
 
-#define ENCODING_VERSION (0)
+#define ENCODING_VERSION (1)
 
 #define PORT_BUFF_LENGTH (8)
 #define ADDRESS_BUFF_LENGTH (40)
-#define NAME_BUFF_LENGTH (32)
+#define NAME_BUFF_LENGTH (16)
 #define MSG_MAX_CHARS (64)
 #define MSG_REP_MAX_CHARS (MSG_MAX_CHARS * 2)
 
 #define PORT_MIN (49152)
 #define PORT_MAX (65535)
+
+#define MAX_CLIENT_COUNT 16
+#define CLIENT_TIMEOUT 16
 
 typedef enum MessageType
 {
@@ -30,6 +33,8 @@ typedef enum MessageType
     MESSAGE_RAW = 4,
     MESSAGE_STAY = 5,
     MESSAGE_ERROR = 6,
+    MESSAGE_USER_IS_TYPING = 7,
+    MESSAGE_USERDATA = 8,
 } MessageType_t;
 
 #pragma pack(push, 2)
@@ -40,6 +45,8 @@ typedef struct MessageHeader
     uint16_t body_length;
     time_t timestamp;
     MessageType_t message_type;
+    uint8_t sender_index;
+    char sender_name[NAME_BUFF_LENGTH];
 } MessageHeader_t;
 
 typedef struct Message

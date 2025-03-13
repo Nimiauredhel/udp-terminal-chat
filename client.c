@@ -3,12 +3,14 @@
 static void client_init(ClientSideData_t *data);
 static void client_msglist_init(ClientMsgList_t *list);
 static void client_msglist_push(ClientMsgList_t *list, Message_t *msg);
-static void client_msglist_render(ClientMsgList_t *list, ClientTUIData_t *tui);
+static void client_peerlist_init(ClientPeerList_t *peers);
+static void client_peerlist_update(ClientPeerList_t *peers, Message_t *update_msg);
 static void client_create_rx_thread(ClientSideData_t *data);
 static void client_create_render_thread(ClientSideData_t *data);
 static void client_tx_loop(ClientSideData_t *data) __attribute__ ((__noreturn__));
 static void* client_rx_loop(void *arg);
 static void* client_render_loop(void *arg);
+static void client_msglist_render(ClientMsgList_t *list, ClientTUIData_t *tui);
 static void client_send_message(ClientSideData_t *data);
 static void client_error_negative(int test_value, int exit_value, char *context_message, ClientSideData_t *data);
 static void client_error_zero(int test_value, int exit_value, char *context_message, ClientSideData_t *data);
@@ -23,6 +25,7 @@ void client_start(void)
 
     client_init(client_side_data);
     client_msglist_init(&client_side_data->msg_list);
+    client_peerlist_init(&client_side_data->peer_list);
 
     usleep(500);
 
@@ -34,6 +37,7 @@ void client_start(void)
 static void client_init(ClientSideData_t *data)
 {
     pthread_mutex_init(&data->input.lock, NULL);
+    pthread_mutex_init(&data->session.lock, NULL);
 
     char server_ip[ADDRESS_BUFF_LENGTH];
     char server_port[PORT_BUFF_LENGTH];
@@ -133,9 +137,11 @@ static void client_msglist_init(ClientMsgList_t *list)
         .header =
         {
             .message_type = htons(MESSAGE_CHAT),
-            .timestamp = time(NULL),
+            .timestamp = htonl(time(NULL)),
             .body_length = 16,
-            .encoding_version = ENCODING_VERSION
+            .encoding_version = htons(ENCODING_VERSION),
+            .sender_name = "APP",
+            .sender_index = 255
         },
         .body = "testTESTtestTEST"
     };
@@ -162,11 +168,44 @@ static void client_msglist_push(ClientMsgList_t *list, Message_t *msg)
 
     list->tail = new_idx;
     explicit_bzero(list->msgs[new_idx], MSG_REP_MAX_CHARS);
-    format_message(msg->body, NULL, msg->header.timestamp, get_format_by_message_type(ntohs(msg->header.message_type)),
+    format_message(msg->body, msg->header.sender_name, ntohl(msg->header.timestamp), get_format_by_message_type(ntohs(msg->header.message_type)),
             list->msgs[new_idx]);
     list->dirty = true;
 
     pthread_mutex_unlock(&list->lock);
+}
+
+static void client_peerlist_init(ClientPeerList_t *peers)
+{
+    explicit_bzero(peers, sizeof(ClientPeerList_t));
+    pthread_mutex_init(&peers->lock, NULL);
+}
+
+static void client_peerlist_update(ClientPeerList_t *peers, Message_t *update_msg)
+{
+    pthread_mutex_lock(&peers->lock);
+
+    switch((MessageType_t)ntohs(update_msg->header.message_type))
+    {
+        case MESSAGE_JOIN:
+        case MESSAGE_USERDATA:
+            strncpy(peers->names[update_msg->header.sender_index], update_msg->header.sender_name, NAME_BUFF_LENGTH);
+            peers->connected[update_msg->header.sender_index] = true;
+            break;
+        case MESSAGE_QUIT:
+            explicit_bzero(peers->names[update_msg->header.sender_index], NAME_BUFF_LENGTH);
+            peers->connected[update_msg->header.sender_index] = false;
+            break;
+        case MESSAGE_UNDEFINED:
+        case MESSAGE_CHAT:
+        case MESSAGE_RAW:
+        case MESSAGE_STAY:
+        case MESSAGE_ERROR:
+        case MESSAGE_USER_IS_TYPING:
+            break;
+    }
+
+    pthread_mutex_unlock(&peers->lock);
 }
 
 static void client_msglist_render(ClientMsgList_t *list, ClientTUIData_t *tui)
@@ -233,6 +272,7 @@ static void client_tx_loop(ClientSideData_t *data)
 
     // send initial server join message
     data->outgoing_message.header.message_type = htons(MESSAGE_JOIN);
+    strncpy(data->outgoing_message.header.sender_name, data->client_name, NAME_BUFF_LENGTH);
     client_send_message(data);
 
     noecho();
@@ -315,7 +355,7 @@ static void* client_rx_loop(void *arg)
     ClientSideData_t *data = (ClientSideData_t *)arg;
 
     struct sockaddr_in incoming_address = { .sin_family = AF_INET };
-    Message_t incoming_buffer[sizeof(Message_t)];
+    Message_t incoming_buffer;
     socklen_t incoming_address_length = sizeof(incoming_address);
 
     while (!should_terminate)
@@ -334,7 +374,28 @@ static void* client_rx_loop(void *arg)
         if (should_terminate) break;
         if (bytes_received < 2) continue;
 
-        client_msglist_push(&data->msg_list, (Message_t *)&incoming_buffer);
+        MessageType_t host_order_message_type = ntohs(incoming_buffer.header.message_type);
+
+        switch(host_order_message_type)
+        {
+            case MESSAGE_CHAT:
+            case MESSAGE_RAW:
+                client_msglist_push(&data->msg_list, &incoming_buffer);
+                break;
+            case MESSAGE_USERDATA:
+                client_peerlist_update(&data->peer_list, &incoming_buffer);
+                break;
+            case MESSAGE_JOIN:
+            case MESSAGE_QUIT:
+                client_peerlist_update(&data->peer_list, &incoming_buffer);
+                client_msglist_push(&data->msg_list, &incoming_buffer);
+                break;
+            case MESSAGE_STAY:
+            case MESSAGE_ERROR:
+            case MESSAGE_USER_IS_TYPING:
+            case MESSAGE_UNDEFINED:
+                break;
+        }
     }
 
     return NULL;
@@ -345,6 +406,9 @@ static void* client_render_loop(void *arg)
     ClientSideData_t *data = (ClientSideData_t *)arg;
     ClientTUIData_t *tui = &data->tui;
     ClientMsgList_t *msgs = &data->msg_list;
+    ClientPeerList_t *users = &data->peer_list;
+    ClientSessionData_t *session = &data->session;
+    ClientInputState_t *input = &data->input;
 
     getmaxyx(curscr, tui->rows, tui->cols);
 
@@ -358,65 +422,13 @@ static void* client_render_loop(void *arg)
     clear();
     refresh();
 
+    // arbitrary transformation to force first frame draw without complicating the loop
+    tui->rows *= 2;
+    tui->cols *= 2;
+
     while (!should_terminate)
     {
-        if (tui->dirty_size)
-        {
-            clear();
-            refresh();
-        }
-
-        // input
-        pthread_mutex_lock(&data->input.lock);
-
-        if (data->input.dirty || tui->dirty_size)
-        {
-            data->input.dirty = false;
-            mvwin(tui->win_input, tui->rows*0.85f, tui->cols*0.1f); // whole bottom
-            wresize(tui->win_input, tui->rows*0.15f, tui->cols*0.8f);
-            wclear(tui->win_input);
-            box(tui->win_input, 0, 0);
-            mvwprintw(tui->win_input, 0, 0, "Input");
-
-            if (data->input.idx > 0)
-            {
-                mvwprintw(tui->win_input, 1, 1, "%s", data->input.buff);
-            }
-
-            wrefresh(tui->win_input);
-        }
-
-        pthread_mutex_unlock(&data->input.lock);
-
-        // msglist
-        client_msglist_render(msgs, tui);
-
-        // users
-        if (tui->dirty_users || tui->dirty_size)
-        {
-            tui->dirty_users = false;
-            mvwin(tui->win_users, tui->rows*0.25f, tui->cols*0.02f); // middle to bottom left
-            wresize(tui->win_users, tui->rows*0.45f, tui->cols*0.22f);
-            wclear(tui->win_users);
-            box(tui->win_users, 0, 0);
-            mvwprintw(tui->win_users, 0, 0, "Users");
-            wrefresh(tui->win_users);
-        }
-
-        // session
-        if (tui->dirty_session || tui->dirty_size)
-        {
-            tui->dirty_session = false;
-            mvwin(tui->win_session, tui->rows*0.05f, tui->cols*0.02f); // top left
-            wresize(tui->win_session, tui->rows*0.20f, tui->cols*0.22f);
-            wclear(tui->win_session);
-            box(tui->win_session, 0, 0);
-            mvwprintw(tui->win_session, 0, 0, "Session");
-            wrefresh(tui->win_session);
-        }
-
-        usleep(16000);
-
+        // check if main window has been resized
         tui->prev_rows = tui->rows;
         tui->prev_cols = tui->cols;
 
@@ -426,13 +438,81 @@ static void* client_render_loop(void *arg)
             tui->rows != tui->prev_rows
             || tui->cols != tui->prev_cols;
 
+        // check if main window too small
         if (tui->rows < 6 || tui->cols < 32)
         {
             clear();
             printw("Window too small to render.");
             refresh();
+            usleep(64000);
             continue;
         }
+
+        if (tui->dirty_size)
+        {
+            clear();
+            refresh();
+        }
+
+        // input
+        pthread_mutex_lock(&input->lock);
+
+        if (input->dirty || tui->dirty_size)
+        {
+            input->dirty = false;
+            mvwin(tui->win_input, tui->rows*0.85f, tui->cols*0.1f); // whole bottom
+            wresize(tui->win_input, tui->rows*0.15f, tui->cols*0.8f);
+            wclear(tui->win_input);
+            box(tui->win_input, 0, 0);
+            mvwprintw(tui->win_input, 0, 0, "Input");
+
+            if (input->idx > 0)
+            {
+                mvwprintw(tui->win_input, 1, 1, "%s", input->buff);
+            }
+
+            wrefresh(tui->win_input);
+        }
+
+        pthread_mutex_unlock(&input->lock);
+
+        // msglist
+        client_msglist_render(msgs, tui);
+
+        // users
+        pthread_mutex_lock(&users->lock);
+
+        if (users->dirty || tui->dirty_size)
+        {
+            users->dirty = false;
+            mvwin(tui->win_users, tui->rows*0.25f, tui->cols*0.02f); // middle to bottom left
+            wresize(tui->win_users, tui->rows*0.45f, tui->cols*0.22f);
+            wclear(tui->win_users);
+            box(tui->win_users, 0, 0);
+            mvwprintw(tui->win_users, 0, 0, "Users");
+            wrefresh(tui->win_users);
+        }
+
+        pthread_mutex_unlock(&users->lock);
+
+        // session
+        pthread_mutex_lock(&session->lock);
+
+        if (session->dirty || tui->dirty_size)
+        {
+            session->dirty = false;
+            mvwin(tui->win_session, tui->rows*0.05f, tui->cols*0.02f); // top left
+            wresize(tui->win_session, tui->rows*0.20f, tui->cols*0.22f);
+            wclear(tui->win_session);
+            box(tui->win_session, 0, 0);
+            mvwprintw(tui->win_session, 0, 0, "Session");
+            wrefresh(tui->win_session);
+        }
+
+        pthread_mutex_unlock(&session->lock);
+
+        // 16ms frame delay to approximate 60fps
+        usleep(16000);
     }
 
     delwin(tui->win_input);
@@ -467,19 +547,23 @@ static void client_send_message(ClientSideData_t *data)
             sprintf(data->outgoing_message.body, "%u:%s", ntohs(data->local_address.sin_port), data->client_name);
             msg_body_length = strlen(data->outgoing_message.body);
             break;
-    }
+        case MESSAGE_USER_IS_TYPING:
+          break;
+        case MESSAGE_USERDATA:
+          break;
+        }
 
     data->outgoing_message.header.body_length = htons(msg_body_length);
     data->outgoing_message.header.timestamp = htonl(time(NULL));
 
     if (host_order_msg_type == MESSAGE_QUIT)
     {
-        sendto(data->udp_socket, &data->outgoing_message, sizeof(MessageHeader_t) + msg_body_length + 1, 0,
+        sendto(data->udp_socket, &data->outgoing_message, sizeof(Message_t), 0,
         (struct sockaddr *)&(data->server_address), sizeof(data->server_address));
     }
     else
     {
-        client_error_negative(sendto(data->udp_socket, &data->outgoing_message, sizeof(Message_t) + msg_body_length + 1, 0,
+        client_error_negative(sendto(data->udp_socket, &data->outgoing_message, sizeof(Message_t), 0,
         (struct sockaddr *)&(data->server_address), sizeof(data->server_address)), EXIT_FAILURE, "Failed to send message", data);
     }
 }
