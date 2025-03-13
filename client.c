@@ -348,6 +348,9 @@ static void client_create_render_thread(ClientSideData_t *data)
 
 static void client_tx_loop(ClientSideData_t *data)
 {
+    static const uint8_t typing_status_threshold = 16;
+
+    uint8_t typing_status_counter = 0;
     int input_ch = ERR;
 
     // initialize the message data structure & text buffer
@@ -374,6 +377,7 @@ static void client_tx_loop(ClientSideData_t *data)
         {
             // if timed out, send a "stay" message to let the server know we are still online
             case ERR:
+                typing_status_counter = 0;
                 explicit_bzero(data->outgoing_message.body, MSG_MAX_CHARS);
                 data->outgoing_message.header.message_type = htons(MESSAGE_STAY);
                 client_send_message(data);
@@ -383,6 +387,7 @@ static void client_tx_loop(ClientSideData_t *data)
             case '\r':
             case '\n':
                 pthread_mutex_lock(&data->input.lock);
+                typing_status_counter = 0;
 
                 if (strlen(data->input.buff) > 0)
                 {
@@ -426,6 +431,18 @@ static void client_tx_loop(ClientSideData_t *data)
                 }
 
                 data->input.dirty = true;
+                
+                if (typing_status_counter == 0)
+                {
+                    explicit_bzero(data->outgoing_message.body, MSG_MAX_CHARS);
+                    data->outgoing_message.header.message_type = htons(MESSAGE_USERDATA);
+                    client_send_message(data);
+                }
+                else if (typing_status_counter >= typing_status_threshold)
+                {
+                    typing_status_counter = 0;
+                }
+                else typing_status_counter++;
 
                 pthread_mutex_unlock(&data->input.lock);
                 break;
@@ -613,12 +630,12 @@ static void client_send_message(ClientSideData_t *data)
 
     if (host_order_msg_type == MESSAGE_QUIT)
     {
-        sendto(data->udp_socket, &data->outgoing_message, sizeof(Message_t), 0,
+        sendto(data->udp_socket, &data->outgoing_message, sizeof(MessageHeader_t)+msg_body_length+1, 0,
         (struct sockaddr *)&(data->server_address), sizeof(data->server_address));
     }
     else
     {
-        client_error_negative(sendto(data->udp_socket, &data->outgoing_message, sizeof(Message_t), 0,
+        client_error_negative(sendto(data->udp_socket, &data->outgoing_message, sizeof(MessageHeader_t)+msg_body_length+1, 0,
         (struct sockaddr *)&(data->server_address), sizeof(data->server_address)), EXIT_FAILURE, "Failed to send message", data);
     }
 }

@@ -324,9 +324,15 @@ static void server_loop(ServerSideData_t *data)
                 distribute_client_status(data, client_index);
                 pthread_mutex_unlock(&data->clients.lock);
                 break;
+            case MESSAGE_USERDATA:
+                pthread_mutex_lock(&data->clients.lock);
+                data->clients.status_flags[client_index] = USTATUS_TYPING;
+                data->clients.status_timers[client_index] = STATUS_TYPING_TIMEOUT;
+                distribute_client_status(data, client_index);
+                pthread_mutex_unlock(&data->clients.lock);
+                break;
             case MESSAGE_RAW:
             case MESSAGE_ERROR:
-            case MESSAGE_USERDATA:
               break;
             }
     }
