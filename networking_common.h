@@ -15,7 +15,7 @@
 #define PORT_BUFF_LENGTH (8)
 #define ADDRESS_BUFF_LENGTH (40)
 #define NAME_BUFF_LENGTH (16)
-#define MSG_MAX_CHARS (64)
+#define MSG_MAX_CHARS (256)
 #define MSG_REP_MAX_CHARS (MSG_MAX_CHARS * 2)
 
 #define PORT_MIN (49152)
