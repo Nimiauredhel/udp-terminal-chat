@@ -30,10 +30,9 @@ void timedate_to_timestring(time_t timedate, char *buff)
 {
     struct tm *now_structured_ptr = localtime(&timedate);
 
-    sprintf(buff, "%02d:%02d:%02d",
+    sprintf(buff, "%02d:%02d",
             now_structured_ptr->tm_hour,
-            now_structured_ptr->tm_min,
-            now_structured_ptr->tm_sec);
+            now_structured_ptr->tm_min);
 }
 
 void timedate_to_timedatestring(time_t timedate, char *buff)
