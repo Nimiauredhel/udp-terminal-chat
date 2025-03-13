@@ -10,6 +10,9 @@ static void client_create_render_thread(ClientSideData_t *data);
 static void client_tx_loop(ClientSideData_t *data) __attribute__ ((__noreturn__));
 static void* client_rx_loop(void *arg);
 static void* client_render_loop(void *arg);
+static void client_input_render(ClientInputState_t *input, ClientTUIData_t *tui);
+static void client_session_render(ClientSessionData_t *session, ClientTUIData_t *tui);
+static void client_peerlist_render(ClientPeerList_t *peers, ClientTUIData_t *tui);
 static void client_msglist_render(ClientMsgList_t *list, ClientTUIData_t *tui);
 static void client_send_message(ClientSideData_t *data);
 static void client_error_negative(int test_value, int exit_value, char *context_message, ClientSideData_t *data);
@@ -191,10 +194,12 @@ static void client_peerlist_update(ClientPeerList_t *peers, Message_t *update_ms
         case MESSAGE_USERDATA:
             strncpy(peers->names[update_msg->header.sender_index], update_msg->header.sender_name, NAME_BUFF_LENGTH);
             peers->connected[update_msg->header.sender_index] = true;
+            peers->dirty = true;
             break;
         case MESSAGE_QUIT:
             explicit_bzero(peers->names[update_msg->header.sender_index], NAME_BUFF_LENGTH);
             peers->connected[update_msg->header.sender_index] = false;
+            peers->dirty = true;
             break;
         case MESSAGE_UNDEFINED:
         case MESSAGE_CHAT:
@@ -203,6 +208,78 @@ static void client_peerlist_update(ClientPeerList_t *peers, Message_t *update_ms
         case MESSAGE_ERROR:
         case MESSAGE_USER_IS_TYPING:
             break;
+    }
+
+    pthread_mutex_unlock(&peers->lock);
+}
+
+static void client_input_render(ClientInputState_t *input, ClientTUIData_t *tui)
+{
+    pthread_mutex_lock(&input->lock);
+
+    if (input->dirty || tui->dirty_size)
+    {
+        input->dirty = false;
+        mvwin(tui->win_input, tui->rows*0.85f, tui->cols*0.1f); // whole bottom
+        wresize(tui->win_input, tui->rows*0.15f, tui->cols*0.8f);
+        wclear(tui->win_input);
+        box(tui->win_input, 0, 0);
+        mvwprintw(tui->win_input, 0, 0, "Input");
+
+        if (input->idx > 0)
+        {
+            mvwprintw(tui->win_input, 1, 1, "%s", input->buff);
+        }
+
+        wrefresh(tui->win_input);
+    }
+
+    pthread_mutex_unlock(&input->lock);
+}
+
+static void client_session_render(ClientSessionData_t *session, ClientTUIData_t *tui)
+{
+    pthread_mutex_lock(&session->lock);
+
+    if (session->dirty || tui->dirty_size)
+    {
+        session->dirty = false;
+        mvwin(tui->win_session, tui->rows*0.05f, tui->cols*0.02f); // top left
+        wresize(tui->win_session, tui->rows*0.20f, tui->cols*0.22f);
+        wclear(tui->win_session);
+        box(tui->win_session, 0, 0);
+        mvwprintw(tui->win_session, 0, 0, "Session");
+        wrefresh(tui->win_session);
+    }
+
+    pthread_mutex_unlock(&session->lock);
+}
+
+static void client_peerlist_render(ClientPeerList_t *peers, ClientTUIData_t *tui)
+{
+    pthread_mutex_lock(&peers->lock);
+
+    if (peers->dirty || tui->dirty_size)
+    {
+        peers->dirty = false;
+        mvwin(tui->win_users, tui->rows*0.25f, tui->cols*0.02f); // middle to bottom left
+        wresize(tui->win_users, tui->rows*0.45f, tui->cols*0.22f);
+        wclear(tui->win_users);
+        box(tui->win_users, 0, 0);
+        mvwprintw(tui->win_users, 0, 0, "Users");
+
+        uint8_t row = 1;
+
+        for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
+        {
+            if (peers->connected[i])
+            {
+                mvwprintw(tui->win_users, row, 1, "%s", peers->names[i]);
+                row++;
+            }
+        }
+
+        wrefresh(tui->win_users);
     }
 
     pthread_mutex_unlock(&peers->lock);
@@ -406,7 +483,7 @@ static void* client_render_loop(void *arg)
     ClientSideData_t *data = (ClientSideData_t *)arg;
     ClientTUIData_t *tui = &data->tui;
     ClientMsgList_t *msgs = &data->msg_list;
-    ClientPeerList_t *users = &data->peer_list;
+    ClientPeerList_t *peers = &data->peer_list;
     ClientSessionData_t *session = &data->session;
     ClientInputState_t *input = &data->input;
 
@@ -455,61 +532,16 @@ static void* client_render_loop(void *arg)
         }
 
         // input
-        pthread_mutex_lock(&input->lock);
-
-        if (input->dirty || tui->dirty_size)
-        {
-            input->dirty = false;
-            mvwin(tui->win_input, tui->rows*0.85f, tui->cols*0.1f); // whole bottom
-            wresize(tui->win_input, tui->rows*0.15f, tui->cols*0.8f);
-            wclear(tui->win_input);
-            box(tui->win_input, 0, 0);
-            mvwprintw(tui->win_input, 0, 0, "Input");
-
-            if (input->idx > 0)
-            {
-                mvwprintw(tui->win_input, 1, 1, "%s", input->buff);
-            }
-
-            wrefresh(tui->win_input);
-        }
-
-        pthread_mutex_unlock(&input->lock);
+        client_input_render(input, tui);
 
         // msglist
         client_msglist_render(msgs, tui);
 
         // users
-        pthread_mutex_lock(&users->lock);
-
-        if (users->dirty || tui->dirty_size)
-        {
-            users->dirty = false;
-            mvwin(tui->win_users, tui->rows*0.25f, tui->cols*0.02f); // middle to bottom left
-            wresize(tui->win_users, tui->rows*0.45f, tui->cols*0.22f);
-            wclear(tui->win_users);
-            box(tui->win_users, 0, 0);
-            mvwprintw(tui->win_users, 0, 0, "Users");
-            wrefresh(tui->win_users);
-        }
-
-        pthread_mutex_unlock(&users->lock);
+        client_peerlist_render(peers, tui);
 
         // session
-        pthread_mutex_lock(&session->lock);
-
-        if (session->dirty || tui->dirty_size)
-        {
-            session->dirty = false;
-            mvwin(tui->win_session, tui->rows*0.05f, tui->cols*0.02f); // top left
-            wresize(tui->win_session, tui->rows*0.20f, tui->cols*0.22f);
-            wclear(tui->win_session);
-            box(tui->win_session, 0, 0);
-            mvwprintw(tui->win_session, 0, 0, "Session");
-            wrefresh(tui->win_session);
-        }
-
-        pthread_mutex_unlock(&session->lock);
+        client_session_render(session, tui);
 
         // 16ms frame delay to approximate 60fps
         usleep(16000);
