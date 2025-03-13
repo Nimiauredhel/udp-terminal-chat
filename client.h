@@ -12,7 +12,7 @@ typedef struct ClientMsgList
     int8_t head;
     int8_t tail;
     pthread_mutex_t lock;
-    char msgs[CLIENT_MAX_VISIBLE_MSGS][MSG_MAX_CHARS * 2];
+    char msgs[CLIENT_MAX_VISIBLE_MSGS][MSG_REP_MAX_CHARS];
 } ClientMsgList_t;
 
 typedef struct ClientInputState
@@ -20,7 +20,7 @@ typedef struct ClientInputState
     bool dirty;
     int16_t idx;
     pthread_mutex_t lock;
-    char buff[MSG_MAX_CHARS+1];
+    char buff[MSG_MAX_CHARS];
 } ClientInputState_t;
 
 typedef struct ClientTUIData

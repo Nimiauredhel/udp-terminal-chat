@@ -10,15 +10,16 @@
 
 #include "common.h"
 
-#define ENCODING_VERSION 0
+#define ENCODING_VERSION (0)
 
-#define PORT_BUFF_LENGTH 8
-#define ADDRESS_BUFF_LENGTH 40
-#define NAME_BUFF_LENGTH 32
-#define MSG_MAX_CHARS 64
+#define PORT_BUFF_LENGTH (8)
+#define ADDRESS_BUFF_LENGTH (40)
+#define NAME_BUFF_LENGTH (32)
+#define MSG_MAX_CHARS (64)
+#define MSG_REP_MAX_CHARS (MSG_MAX_CHARS * 2)
 
-#define PORT_MIN 49152
-#define PORT_MAX 65535
+#define PORT_MIN (49152)
+#define PORT_MAX (65535)
 
 typedef enum MessageType
 {
@@ -48,5 +49,12 @@ typedef struct Message
 } Message_t;
 
 #pragma pack(pop)
+
+extern const char *msg_format_text;
+extern const char *msg_format_join;
+extern const char *msg_format_quit;
+
+const char *get_format_by_message_type(MessageType_t msg_type);
+void format_message(const char *message, const char *sender, time_t timedate, const char *format, char *output);
 
 #endif

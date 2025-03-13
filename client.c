@@ -124,7 +124,23 @@ static void client_msglist_init(ClientMsgList_t *list)
     list->head = 0;
     list->tail = 0;
 
+    // "hard" dummy
     strcpy(list->msgs[0], "~~~~--------~~~~");
+
+    // "soft" test dummy
+    Message_t test_msg =
+    {
+        .header =
+        {
+            .message_type = htons(MESSAGE_CHAT),
+            .timestamp = time(NULL),
+            .body_length = 16,
+            .encoding_version = ENCODING_VERSION
+        },
+        .body = "testTESTtestTEST"
+    };
+
+    client_msglist_push(list, &test_msg);
 }
 
 static void client_msglist_push(ClientMsgList_t *list, Message_t *msg)
@@ -145,7 +161,9 @@ static void client_msglist_push(ClientMsgList_t *list, Message_t *msg)
     }
 
     list->tail = new_idx;
-    strcpy(list->msgs[new_idx], msg->body);
+    explicit_bzero(list->msgs[new_idx], MSG_REP_MAX_CHARS);
+    format_message(msg->body, NULL, msg->header.timestamp, get_format_by_message_type(ntohs(msg->header.message_type)),
+            list->msgs[new_idx]);
     list->dirty = true;
 
     pthread_mutex_unlock(&list->lock);
@@ -209,7 +227,7 @@ static void client_tx_loop(ClientSideData_t *data)
     int input_ch = ERR;
 
     // initialize the message data structure & text buffer
-    explicit_bzero(&data->input.buff, MSG_MAX_CHARS+1);
+    explicit_bzero(&data->input.buff, MSG_MAX_CHARS);
     explicit_bzero(&data->outgoing_message, sizeof(Message_t));
     data->outgoing_message.header.encoding_version = htons(ENCODING_VERSION);
 
@@ -297,7 +315,7 @@ static void* client_rx_loop(void *arg)
     ClientSideData_t *data = (ClientSideData_t *)arg;
 
     struct sockaddr_in incoming_address = { .sin_family = AF_INET };
-    char incoming_buffer[sizeof(Message_t)];
+    Message_t incoming_buffer[sizeof(Message_t)];
     socklen_t incoming_address_length = sizeof(incoming_address);
 
     while (!should_terminate)
@@ -314,7 +332,7 @@ static void* client_rx_loop(void *arg)
         client_error_zero(bytes_received, EXIT_FAILURE, "Failed to receive bytes", data);
 
         if (should_terminate) break;
-        if (strlen(incoming_buffer) < 2) continue;
+        if (bytes_received < 2) continue;
 
         client_msglist_push(&data->msg_list, (Message_t *)&incoming_buffer);
     }
@@ -428,32 +446,33 @@ static void* client_render_loop(void *arg)
 static void client_send_message(ClientSideData_t *data)
 {
     uint16_t msg_body_length = 0;
+    MessageType_t host_order_msg_type = ntohs(data->outgoing_message.header.message_type);
 
-    switch (ntohs(data->outgoing_message.header.message_type)) 
+    switch (host_order_msg_type) 
     {
-    case MESSAGE_UNDEFINED:
-        //printw("*** Attempted sending message with undefined type. Aborting.");
-        break;
-    case MESSAGE_ERROR:
-    case MESSAGE_RAW:
-    case MESSAGE_CHAT:
-        msg_body_length = strlen(data->outgoing_message.body);
+        case MESSAGE_UNDEFINED:
+            //printw("*** Attempted sending message with undefined type. Aborting.");
+            break;
+        case MESSAGE_ERROR:
+        case MESSAGE_RAW:
+        case MESSAGE_CHAT:
+            msg_body_length = strlen(data->outgoing_message.body);
 
-        if (msg_body_length <= 0) return;
+            if (msg_body_length <= 0) return;
 
-        break;
-    case MESSAGE_JOIN:
-    case MESSAGE_QUIT:
-    case MESSAGE_STAY:
-        sprintf(data->outgoing_message.body, "%u:%s", ntohs(data->local_address.sin_port), data->client_name);
-        msg_body_length = strlen(data->outgoing_message.body);
-        break;
+            break;
+        case MESSAGE_JOIN:
+        case MESSAGE_QUIT:
+        case MESSAGE_STAY:
+            sprintf(data->outgoing_message.body, "%u:%s", ntohs(data->local_address.sin_port), data->client_name);
+            msg_body_length = strlen(data->outgoing_message.body);
+            break;
     }
 
     data->outgoing_message.header.body_length = htons(msg_body_length);
     data->outgoing_message.header.timestamp = htonl(time(NULL));
 
-    if (data->outgoing_message.header.message_type == MESSAGE_QUIT)
+    if (host_order_msg_type == MESSAGE_QUIT)
     {
         sendto(data->udp_socket, &data->outgoing_message, sizeof(MessageHeader_t) + msg_body_length + 1, 0,
         (struct sockaddr *)&(data->server_address), sizeof(data->server_address));

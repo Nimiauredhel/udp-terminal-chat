@@ -1,16 +1,12 @@
 #include "server.h"
 
-static const char *msg_format_text = "[%s] %s: %s";
-static const char *msg_format_join = "[%s] %s has joined the conversation.";
-static const char *msg_format_quit = "[%s] %s has left the conversation.";
-
 static void server_init(ServerSideData_t *data);
 static void server_create_monitor_thread(ServerSideData_t *data);
 static void *server_monitor_loop(void *arg);
 static void server_loop(ServerSideData_t *data) __attribute__ ((__noreturn__));
 static void handle_client_join(ServerSideData_t *data, char *join_message, struct sockaddr_in *address, int8_t index);
 static void handle_client_quit(ServerSideData_t *data, int8_t index);
-static void forward_message_to_clients(ServerSideData_t *data, int8_t subject_client_index, time_t timedate, char *message, const char *format, bool to_subject, bool local_print);
+static void forward_message_to_clients(ServerSideData_t *data, Message_t *message, int8_t subject_client_index, bool to_subject, bool local_print);
 static void server_terminate(ServerSideData_t *data, int exit_value) __attribute__ ((__noreturn__));
 static int8_t get_free_client_index(ServerSideData_t *data);
 static int8_t get_matching_client_index(ServerSideData_t* data, struct sockaddr_in *address);
@@ -111,37 +107,9 @@ static int8_t get_matching_client_index(ServerSideData_t* data, struct sockaddr_
     return -1;
 }
 
-static void forward_message_to_clients(ServerSideData_t *data, int8_t subject_client_index, time_t timedate, char *message, const char *format, bool to_subject, bool local_print)
+static void forward_message_to_clients(ServerSideData_t *data, Message_t *message, int8_t subject_client_index, bool to_subject, bool local_print)
 {
-    char timestamp[32];
-    char full_message[MSG_MAX_CHARS * 2];
-    size_t message_length;
     socklen_t peer_address_length;
-
-    timedate_to_timestring(timedate, timestamp);
-
-    if (message != NULL && format != NULL)
-    {
-        sprintf(full_message, format, timestamp,
-                subject_client_index == -1 ? "?" : data->clients_names[subject_client_index],
-                message);
-    }
-    else if (format != NULL)
-    {
-        sprintf(full_message, format, timestamp,
-                subject_client_index == -1 ? "?" : data->clients_names[subject_client_index]);
-    }
-    else if (message != NULL)
-    {
-        sprintf(full_message, "%s ~ %s", timestamp, message);
-    }
-    else
-    {
-        // TODO: this function sucks, make it not suck
-        return;
-    }
-
-    message_length = strlen(full_message) + 1;
 
     for (int8_t index = 0; index < MAX_CLIENT_COUNT; index++)
     {
@@ -152,20 +120,24 @@ static void forward_message_to_clients(ServerSideData_t *data, int8_t subject_cl
 
         peer_address_length = sizeof(data->clients_addresses[index]);
 
-        if (0 > sendto(data->udp_tx_socket, full_message, message_length, 0,
-        (struct sockaddr *)&(data->clients_addresses[index]),
-        peer_address_length))
+        if (0 > sendto(data->udp_tx_socket, message, sizeof(Message_t), 0,
+            (struct sockaddr *)&(data->clients_addresses[index]), peer_address_length))
         {
             printf("Failed to forward message to %s:%u",
                     inet_ntoa(data->clients_addresses[index].sin_addr),
                     ntohs(data->clients_addresses[index].sin_port)); 
         }
 
-        //printf("Forwarded message to %s (%s:%u).\n", clients.names[index], inet_ntoa(clients.addresses[index].sin_addr), ntohs(clients.addresses[index].sin_port));
+        //printf("Forwarded message to %s (%s:%u).\n", data->clients_names[index], inet_ntoa(data->clients_addresses[index].sin_addr), ntohs(data->clients_addresses[index].sin_port));
     }
 
     if (local_print)
     {
+        char full_message[MSG_MAX_CHARS * 2];
+
+        format_message(message->body, subject_client_index == -1 ? NULL : data->clients_names[subject_client_index],
+                ntohl(message->header.timestamp), get_format_by_message_type(ntohs(message->header.message_type)), full_message);
+
         printf("%s\n", full_message);
     }
 }
@@ -194,21 +166,25 @@ static void handle_client_join(ServerSideData_t *data, char *join_message, struc
             char *search = ":";
             uint16_t port_int;
 
-            sprintf(welcome_message, "Welcome! There are currently %d participants.\n", data->clients_count);
+            sprintf(welcome_message, "Welcome! There are currently %d participants", data->clients_count);
 
             if (data->clients_count > 0)
             {
+                strcat(welcome_message, ": ");
+
                 for (uint8_t i = 0; i < MAX_CLIENT_COUNT; i++)
                 {
                     if (data->clients_connected[i])
                     {
-                        sprintf(temp_buff, "  %s\n", data->clients_names[i]);
+                        sprintf(temp_buff, "%s, ", data->clients_names[i]);
                         strcat(welcome_message, temp_buff);
                     }
                 }
             }
-
-            strcat(welcome_message, "--------\n");
+            else
+            {
+                strcat(welcome_message, ".");
+            }
 
             data->clients_addresses[index] = *address;
             data->clients_connected[index] = true;
@@ -225,8 +201,15 @@ static void handle_client_join(ServerSideData_t *data, char *join_message, struc
             data->clients_count++;
 
             time_t timedate = time(NULL);
-            forward_message_to_clients(data, index, timedate, welcome_message, NULL, true, false);
-            forward_message_to_clients(data, index, timedate, NULL, msg_format_join, false, true);
+            Message_t notification = { .header = { .timestamp = timedate, .encoding_version = ENCODING_VERSION } };
+
+            sprintf(notification.body, "%s", welcome_message);
+            notification.header.message_type = htons(MESSAGE_RAW);
+            forward_message_to_clients(data, &notification, index, true, false);
+
+            sprintf(notification.body, "%s", index == -1 ? "?" : data->clients_names[index]);
+            notification.header.message_type = htons(MESSAGE_JOIN);
+            forward_message_to_clients(data, &notification, index, false, true);
         }
     }
     // existing client, reset timeout
@@ -242,7 +225,13 @@ static void handle_client_quit(ServerSideData_t *data, int8_t index)
     {
         data->clients_connected[index] = false;
         data->clients_count--;
-        forward_message_to_clients(data, index, time(NULL), NULL, msg_format_quit, false, true);
+
+        time_t timedate = time(NULL);
+        Message_t notification = { .header = { .timestamp = timedate, .encoding_version = ENCODING_VERSION } };
+
+        sprintf(notification.body, "%s", index == -1 ? "?" : data->clients_names[index]);
+        notification.header.message_type = htons(MESSAGE_QUIT);
+        forward_message_to_clients(data, &notification, index, false, true);
     }
 }
 
@@ -261,14 +250,12 @@ static void server_loop(ServerSideData_t *data)
     static struct sockaddr_in client_address = { .sin_family = AF_INET };
     socklen_t client_address_length = sizeof(client_address);
     int8_t client_index = -1;
-    uint16_t msg_alloc_size = sizeof(Message_t);
-
-    Message_t *incoming_message = malloc(msg_alloc_size);
+    Message_t incoming_message = {0};
 
     while(!should_terminate)
     {
-        memset(incoming_message, 0, msg_alloc_size);
-        ssize_t bytes_received = recvfrom(data->udp_rx_socket, incoming_message, msg_alloc_size, 0, (struct sockaddr*)&client_address, &client_address_length);
+        explicit_bzero(&incoming_message, sizeof(Message_t));
+        ssize_t bytes_received = recvfrom(data->udp_rx_socket, &incoming_message, sizeof(Message_t), 0, (struct sockaddr*)&client_address, &client_address_length);
 
         if (should_terminate) break;
 
@@ -276,20 +263,20 @@ static void server_loop(ServerSideData_t *data)
 
         client_index = get_matching_client_index(data, &client_address);
 
-        switch (ntohs(incoming_message->header.message_type))
+        switch (ntohs(incoming_message.header.message_type))
         {
             case MESSAGE_UNDEFINED:
-                printf("Received a packet from %s:%d -- Message: %s\n", inet_ntoa(client_address.sin_addr), ntohs(client_address.sin_port), incoming_message->body);
+                printf("Received a packet from %s:%d -- Message: %s\n", inet_ntoa(client_address.sin_addr), ntohs(client_address.sin_port), incoming_message.body);
                 break;
             case MESSAGE_JOIN:
             case MESSAGE_STAY:
-                handle_client_join(data, incoming_message->body, &client_address, client_index);
+                handle_client_join(data, incoming_message.body, &client_address, client_index);
                 break;
             case MESSAGE_QUIT:
                 handle_client_quit(data, client_index);
                 break;
             case MESSAGE_CHAT:
-                forward_message_to_clients(data, client_index, ntohl(incoming_message->header.timestamp), incoming_message->body, msg_format_text, false, true);
+                forward_message_to_clients(data, &incoming_message, client_index, false, true);
                 break;
         }
     }
