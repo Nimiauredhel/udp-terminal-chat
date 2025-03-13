@@ -1,8 +1,8 @@
 #include "server.h"
 
-static const char *msg_format_text = "[%s] %s (%s:%u):\n ~ %s";
-static const char *msg_format_join = "[%s] %s (%s:%u) has joined the conversation.";
-static const char *msg_format_quit = "[%s] %s (%s:%u) has left the conversation.";
+static const char *msg_format_text = "[%s] %s: %s";
+static const char *msg_format_join = "[%s] %s has joined the conversation.";
+static const char *msg_format_quit = "[%s] %s has left the conversation.";
 
 static void server_init(ServerSideData_t *data);
 static void server_create_monitor_thread(ServerSideData_t *data);
@@ -10,16 +10,17 @@ static void *server_monitor_loop(void *arg);
 static void server_loop(ServerSideData_t *data) __attribute__ ((__noreturn__));
 static void handle_client_join(ServerSideData_t *data, char *join_message, struct sockaddr_in *address, int8_t index);
 static void handle_client_quit(ServerSideData_t *data, int8_t index);
-static void forward_message_to_clients(ServerSideData_t *data, int8_t subject_client_index, char *message, const char *format, bool to_subject, bool local_print);
+static void forward_message_to_clients(ServerSideData_t *data, int8_t subject_client_index, time_t timedate, char *message, const char *format, bool to_subject, bool local_print);
 static void server_terminate(ServerSideData_t *data, int exit_value) __attribute__ ((__noreturn__));
 static int8_t get_free_client_index(ServerSideData_t *data);
 static int8_t get_matching_client_index(ServerSideData_t* data, struct sockaddr_in *address);
-static void timedate_to_string(time_t timedate, char *buff);
 static void server_error_negative(int test_value, int exit_value, char *context_message, ServerSideData_t *data);
 static void server_error_zero(int test_value, int exit_value, char *context_message, ServerSideData_t *data);
 
 void server_start(void)
 {
+    initialize_signal_handler();
+
     ServerSideData_t *server_side_data = malloc(sizeof(ServerSideData_t));
     server_init(server_side_data);
     server_create_monitor_thread(server_side_data);
@@ -110,29 +111,25 @@ static int8_t get_matching_client_index(ServerSideData_t* data, struct sockaddr_
     return -1;
 }
 
-static void forward_message_to_clients(ServerSideData_t *data, int8_t subject_client_index, char *message, const char *format, bool to_subject, bool local_print)
+static void forward_message_to_clients(ServerSideData_t *data, int8_t subject_client_index, time_t timedate, char *message, const char *format, bool to_subject, bool local_print)
 {
     char timestamp[32];
-    char full_message[MSG_BUFF_LENGTH];
+    char full_message[MSG_MAX_CHARS * 2];
     size_t message_length;
     socklen_t peer_address_length;
 
-    timedate_to_string(time(NULL), timestamp);
+    timedate_to_timestring(timedate, timestamp);
 
     if (message != NULL && format != NULL)
     {
         sprintf(full_message, format, timestamp,
                 subject_client_index == -1 ? "?" : data->clients_names[subject_client_index],
-                inet_ntoa(data->clients_addresses[subject_client_index].sin_addr),
-                ntohs(data->clients_addresses[subject_client_index].sin_port),
                 message);
     }
     else if (format != NULL)
     {
         sprintf(full_message, format, timestamp,
-                subject_client_index == -1 ? "?" : data->clients_names[subject_client_index],
-                inet_ntoa(data->clients_addresses[subject_client_index].sin_addr),
-                ntohs(data->clients_addresses[subject_client_index].sin_port));
+                subject_client_index == -1 ? "?" : data->clients_names[subject_client_index]);
     }
     else if (message != NULL)
     {
@@ -150,7 +147,7 @@ static void forward_message_to_clients(ServerSideData_t *data, int8_t subject_cl
     {
         if (!data->clients_connected[index]
             || (to_subject && index != subject_client_index)
-            || (!to_subject && index == subject_client_index))
+            /*|| (!to_subject && index == subject_client_index)*/)
             continue;
 
         peer_address_length = sizeof(data->clients_addresses[index]);
@@ -189,7 +186,7 @@ static void handle_client_join(ServerSideData_t *data, char *join_message, struc
         // found room, add client to list
         else
         {
-            char welcome_message[MSG_BUFF_LENGTH] = {0};
+            char welcome_message[MSG_MAX_CHARS] = {0};
             char temp_buff[64];
             char port[ADDRESS_BUFF_LENGTH];
             char name[ADDRESS_BUFF_LENGTH];
@@ -227,8 +224,9 @@ static void handle_client_join(ServerSideData_t *data, char *join_message, struc
             sprintf(data->clients_names[index], "%s", name);
             data->clients_count++;
 
-            forward_message_to_clients(data, index, welcome_message, NULL, true, false);
-            forward_message_to_clients(data, index, NULL, msg_format_join, false, true);
+            time_t timedate = time(NULL);
+            forward_message_to_clients(data, index, timedate, welcome_message, NULL, true, false);
+            forward_message_to_clients(data, index, timedate, NULL, msg_format_join, false, true);
         }
     }
     // existing client, reset timeout
@@ -244,7 +242,7 @@ static void handle_client_quit(ServerSideData_t *data, int8_t index)
     {
         data->clients_connected[index] = false;
         data->clients_count--;
-        forward_message_to_clients(data, index, NULL, msg_format_quit, false, true);
+        forward_message_to_clients(data, index, time(NULL), NULL, msg_format_quit, false, true);
     }
 }
 
@@ -263,7 +261,7 @@ static void server_loop(ServerSideData_t *data)
     static struct sockaddr_in client_address = { .sin_family = AF_INET };
     socklen_t client_address_length = sizeof(client_address);
     int8_t client_index = -1;
-    uint16_t msg_alloc_size = sizeof(Message_t) + MSG_BUFF_LENGTH;
+    uint16_t msg_alloc_size = sizeof(Message_t);
 
     Message_t *incoming_message = malloc(msg_alloc_size);
 
@@ -291,7 +289,7 @@ static void server_loop(ServerSideData_t *data)
                 handle_client_quit(data, client_index);
                 break;
             case MESSAGE_CHAT:
-                forward_message_to_clients(data, client_index, incoming_message->body, msg_format_text, false, true);
+                forward_message_to_clients(data, client_index, ntohl(incoming_message->header.timestamp), incoming_message->body, msg_format_text, false, true);
                 break;
         }
     }
@@ -336,20 +334,6 @@ static void server_terminate(ServerSideData_t *data, int exit_value)
     free(data);
     exit(exit_value);
 }
-
-static void timedate_to_string(time_t timedate, char *buff)
-{
-    struct tm *now_structured_ptr = localtime(&timedate);
-
-    sprintf(buff, "%02d:%02d:%02d %02d/%02d/%d",
-            now_structured_ptr->tm_hour,
-            now_structured_ptr->tm_min,
-            now_structured_ptr->tm_sec,
-            now_structured_ptr->tm_mday,
-            now_structured_ptr->tm_mon + 1,
-            now_structured_ptr->tm_year + 1900);
-}
-
 
 static void server_error_negative(int test_value, int exit_value, char *context_message, ServerSideData_t *data)
 {

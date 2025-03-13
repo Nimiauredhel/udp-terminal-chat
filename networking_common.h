@@ -8,13 +8,14 @@
 #include <ifaddrs.h>
 #include <bits/pthread_stack_min.h>
 
+#include "common.h"
+
 #define ENCODING_VERSION 0
 
 #define PORT_BUFF_LENGTH 8
 #define ADDRESS_BUFF_LENGTH 40
 #define NAME_BUFF_LENGTH 32
-#define MSG_BUFF_LENGTH 512
-#define MSG_ALLOC_SIZE (sizeof(Message_t) + MSG_BUFF_LENGTH)
+#define MSG_MAX_CHARS 64
 
 #define PORT_MIN 49152
 #define PORT_MAX 65535
@@ -36,14 +37,14 @@ typedef struct MessageHeader
 {
     uint16_t encoding_version;
     uint16_t body_length;
-    int64_t timestamp;
+    time_t timestamp;
     MessageType_t message_type;
 } MessageHeader_t;
 
 typedef struct Message
 {
     MessageHeader_t header;
-    char body[];
+    char body[MSG_MAX_CHARS];
 } Message_t;
 
 #pragma pack(pop)

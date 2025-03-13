@@ -5,7 +5,7 @@
 #include "networking_common.h"
 
 #define MAX_CLIENT_COUNT 16
-#define CLIENT_TIMEOUT 2
+#define CLIENT_TIMEOUT 15
 
 typedef struct ServerSideData
 {

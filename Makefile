@@ -1,14 +1,15 @@
 PROGRAM=program
 ARGS=
+INC=-lncurses -ltinfo
 
 default:
-	gcc *.c -o $(PROGRAM).o
+	gcc *.c $(INC) -o $(PROGRAM).o
                                      
 strict:                              
-	bear -- gcc *.c -std=c99 -Wall -pedantic -Wextra -o $(PROGRAM).o
+	bear -- gcc *.c $(INC) -std=c99 -Wall -pedantic -Wextra -o $(PROGRAM).o
                     
 debug:              
-	gcc *.c -std=c99 -Wall -pedantic -Wextra -g -o0 -o $(PROGRAM).o
+	gcc *.c $(INC) -std=c99 -Wall -pedantic -Wextra -g -o $(PROGRAM).o
 
 run:
 	./$(PROGRAM).o $(ARGS)

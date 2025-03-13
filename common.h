@@ -15,10 +15,13 @@
 #include <sys/types.h>
 #include <pthread.h>
 #include <signal.h>
+#include <ncurses.h>
 
 extern bool should_terminate;
 
-extern void initialize_signal_handler(void);
-extern void signal_handler(int signum);
+void initialize_signal_handler(void);
+void signal_handler(int signum);
+void timedate_to_timestring(time_t timedate, char *buff);
+void timedate_to_timedatestring(time_t timedate, char *buff);
 
 #endif

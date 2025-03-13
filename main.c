@@ -16,8 +16,6 @@ const char modes[MODES_COUNT][MODES_MAXLENGTH] =
 
 int main(int argc, char *argv[])
 {
-    initialize_signal_handler();
-
     switch (get_selection_from_args(argc, argv))
     {
         case -1:
