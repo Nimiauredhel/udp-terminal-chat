@@ -279,7 +279,7 @@ static void client_peerlist_render(ClientPeerList_t *peers, ClientTUIData_t *tui
             {
                 short pair = peers->status_flags[i];
                 wattron(tui->win_users, COLOR_PAIR(pair));
-                mvwprintw(tui->win_users, row, peers->status_flags[i],
+                mvwprintw(tui->win_users, row, 2*peers->status_flags[i],
                 peers->status_flags[i] == USTATUS_TYPING ? "%s..."
                 : peers->status_flags[i] == USTATUS_HOT ?  "%s!"
                 : peers->status_flags[i] == USTATUS_IDLE ?  "%s zZz"

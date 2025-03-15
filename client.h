@@ -4,7 +4,7 @@
 #include "common.h"
 #include "networking_common.h"
 
-#define CLIENT_MAX_VISIBLE_MSGS 16
+#define CLIENT_MAX_VISIBLE_MSGS 18
 
 typedef struct ClientMsgList
 {
